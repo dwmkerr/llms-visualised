@@ -167,6 +167,9 @@ body {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+const PREV_CHAPTER_URL = '../top-k-top-p/';
+const NEXT_CHAPTER_URL = '../hallucination/';
+
 /* ================================================================
    STAGES
    ================================================================ */
@@ -587,11 +590,20 @@ function updateProgress(idx) {
 }
 
 function updateButtons(idx) {
-  btnPrev.disabled = idx === 0;
-  btnNext.disabled = idx === STAGES.length - 1;
-  btnNext.innerHTML = idx === STAGES.length - 1
-    ? 'Done'
-    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+  if (idx === 0) {
+    btnPrev.disabled = false;
+    btnPrev.innerHTML = '<svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg> Prev Chapter';
+  } else {
+    btnPrev.disabled = false;
+    btnPrev.innerHTML = '<svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg> Previous';
+  }
+  if (idx === STAGES.length - 1) {
+    btnNext.disabled = false;
+    btnNext.innerHTML = 'Next Chapter <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+  } else {
+    btnNext.disabled = false;
+    btnNext.innerHTML = 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+  }
 }
 
 function goToStage(idx) {
@@ -609,11 +621,36 @@ function goToStage(idx) {
 
 setStageVisibility(0); updateNarrative(0); updateProgress(0); updateButtons(0);
 
-btnNext.addEventListener('click', () => goToStage(currentStage + 1));
-btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+btnNext.addEventListener('click', () => {
+  if (currentStage === STAGES.length - 1) {
+    window.location.href = NEXT_CHAPTER_URL;
+  } else {
+    goToStage(currentStage + 1);
+  }
+});
+btnPrev.addEventListener('click', () => {
+  if (currentStage === 0) {
+    window.location.href = PREV_CHAPTER_URL;
+  } else {
+    goToStage(currentStage - 1);
+  }
+});
 document.addEventListener('keydown', e => {
-  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goToStage(currentStage + 1); }
-  else if (e.key === 'ArrowLeft') { e.preventDefault(); goToStage(currentStage - 1); }
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    if (currentStage === STAGES.length - 1) {
+      window.location.href = NEXT_CHAPTER_URL;
+    } else {
+      goToStage(currentStage + 1);
+    }
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (currentStage === 0) {
+      window.location.href = PREV_CHAPTER_URL;
+    } else {
+      goToStage(currentStage - 1);
+    }
+  }
 });
 window.addEventListener('resize', () => {
   const w = vizPanel.clientWidth, h = vizPanel.clientHeight;

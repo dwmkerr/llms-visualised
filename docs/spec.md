@@ -22,19 +22,17 @@ Each chapter is a self-contained HTML file with:
 ## Architecture
 
 ```
-chapters/
-  01-embeddings/index.html      # Word embeddings & dimensions
-  02-completions/index.html     # From embeddings to next-word prediction
-  03-temperature/index.html     # Temperature parameter
-  04-attention/index.html       # Attention mechanism
-  05-autoregressive/index.html  # Token-by-token generation
-  06-context-window/index.html  # Context window limits
-  07-softmax/index.html         # Logits to probabilities
-  08-top-k-top-p/index.html     # Sampling strategies
-  09-prompts/index.html         # Prompt engineering
-  10-hallucination/index.html   # Hallucination & mitigations
-  11-pipeline/index.html        # Full pipeline overview
-index.html                      # Landing page with chapter navigation
+index.html                        # Ch 1: Word embeddings & dimensions
+completions/index.html            # Ch 2: From embeddings to next-word prediction
+temperature/index.html            # Ch 3: Temperature parameter
+attention/index.html              # Ch 4: Attention mechanism
+autoregressive/index.html         # Ch 5: Token-by-token generation
+context-window/index.html         # Ch 6: Context window limits
+softmax/index.html                # Ch 7: Logits to probabilities
+top-k-top-p/index.html            # Ch 8: Sampling strategies
+prompts/index.html                # Ch 9: Prompt engineering
+hallucination/index.html          # Ch 10: Hallucination & mitigations
+pipeline/index.html               # Ch 11: Full pipeline overview
 ```
 
 ## Tech Stack

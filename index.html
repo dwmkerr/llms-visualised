@@ -1,2 +1,864 @@
 <!DOCTYPE html>
-<html><head><meta http-equiv="refresh" content="0;url=chapters/index.html"></head><body></body></html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ch 01: Dimensions of Meaning</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3.5rem 2.5rem 3rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-chicken   { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .word-salmon    { background: rgba(239,83,80,0.2);   color: #c62828; }
+  .word-dog       { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .word-freedom   { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .word-cookbook   { background: rgba(102,187,106,0.2); color: #2e7d32; }
+
+  /* Branding */
+  .branding {
+    position: absolute;
+    top: 1rem;
+    left: 2.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    z-index: 20;
+  }
+
+  .branding-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #666;
+    letter-spacing: 0.04em;
+  }
+
+  .branding-links {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .branding-links a {
+    display: flex;
+    color: #888;
+    transition: color 0.2s;
+  }
+
+  .branding-links a:hover { color: #555; }
+
+  .branding-links svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+  }
+
+  /* Navigation */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active { background: #222; transform: scale(1.3); }
+  .dot.visited { background: #888; }
+
+  #viz-panel { flex: 1; position: relative; height: 100vh; }
+  #viz-panel canvas { display: block; }
+
+  #narrative-content { transition: opacity 0.35s ease; }
+  #narrative-content.fading { opacity: 0; }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+    .branding { left: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div class="branding">
+    <span class="branding-name">dwmkerr</span>
+    <div class="branding-links">
+      <a href="https://linkedin.com/in/dwmkerr" target="_blank" rel="noopener" title="LinkedIn">
+        <svg viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+      </a>
+      <a href="https://github.com/dwmkerr" target="_blank" rel="noopener" title="GitHub">
+        <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      </a>
+      <a href="https://dwmkerr.substack.com" target="_blank" rel="noopener" title="Substack">
+        <svg viewBox="0 0 24 24"><path d="M22.539 8.242H1.46V5.406h21.08v2.836zM1.46 10.812V24L12 18.11 22.54 24V10.812H1.46zM22.54 0H1.46v2.836h21.08V0z"/></svg>
+      </a>
+    </div>
+  </div>
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   DATA
+   =================================================================== */
+
+const WORDS = [
+  { name: 'Chicken',  animal: 8, food: 9, abs: 1, color: 0xffb74d, cssClass: 'word-chicken' },
+  { name: 'Salmon',   animal: 7, food: 8, abs: 1, color: 0xef5350, cssClass: 'word-salmon' },
+  { name: 'Dog',      animal: 9, food: 2, abs: 1, color: 0x42a5f5, cssClass: 'word-dog' },
+  { name: 'Freedom',  animal: 1, food: 1, abs: 9, color: 0xab47bc, cssClass: 'word-freedom' },
+  { name: 'Cookbook',  animal: 1, food: 8, abs: 3, color: 0x66bb6a, cssClass: 'word-cookbook' },
+];
+
+const JUMBLED_X = [2, 7, 5, 0, 9];
+
+const SCATTERED_POS = [
+  { x: -7, y: 3, z: -4 },
+  { x: 6, y: -2, z: 5 },
+  { x: -3, y: -4, z: 3 },
+  { x: 5, y: 5, z: -6 },
+  { x: 1, y: -1, z: -2 },
+];
+
+const CLUSTER_POS = [
+  { x: -2, y: 1.5, z: 1 },
+  { x: 2.5, y: -0.5, z: -1.5 },
+  { x: -1, y: -2, z: 2 },
+  { x: 1.5, y: 2, z: -1 },
+  { x: 0, y: -0.5, z: -0.5 },
+];
+
+const AMBIENT_DATA = [
+  { text: 'the',  x: -8, y: 4, z: -6 },
+  { text: 'is',   x: 9, y: -3, z: 3 },
+  { text: 'and',  x: -5, y: -5, z: 7 },
+  { text: 'it',   x: 7, y: 6, z: -4 },
+  { text: 'was',  x: -3, y: -6, z: -5 },
+  { text: 'to',   x: 6, y: 3, z: 5 },
+  { text: 'of',   x: -9, y: -1, z: 2 },
+  { text: 'in',   x: 4, y: -4, z: -7 },
+  { text: 'for',  x: -6, y: 5, z: -1 },
+  { text: 'that', x: 8, y: 1, z: 6 },
+];
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+function tag(word) {
+  return `<span class="word-tag ${word.cssClass}">${word.name}</span>`;
+}
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 7',
+    title: 'What is a Large Language Model?',
+    body: `<p>A large language model is a mathematical model that expresses relationships between words.</p>
+           <p>Understanding how words relate to each other is what underpins modern AI &mdash; it's what lets us answer questions, generate text, and reason about language.</p>
+           <p>But how does a model <strong>understand meaning</strong>?</p>`,
+    getPositions: () => SCATTERED_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
+    camera: { x: 0, y: 2, z: 28 },
+    target: { x: 0, y: 0, z: 0 },
+    showAxes: [],
+    showAmbient: true,
+  },
+  {
+    label: 'Stage 2 of 7',
+    title: 'Turning words into numbers',
+    body: `<p>To compute with words, we need numbers. We need to turn words into numbers &mdash; and relationships between words into numbers.</p>
+           <p>How do we do that? Let's start with five words.</p>`,
+    getPositions: () => CLUSTER_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
+    camera: { x: 0, y: 1, z: 20 },
+    target: { x: 0, y: 0, z: 0 },
+    showAxes: [],
+    showAmbient: false,
+  },
+  {
+    label: 'Stage 3 of 7',
+    title: 'Five words',
+    body: `<p>Here are five words: ${WORDS.map(w => tag(w)).join(', ')}.</p>
+           <p>Right now there's no mathematical relationship between them. They could be in any order.</p>
+           <p>We want to start creating some. Let's see how.</p>`,
+    getPositions: () => WORDS.map((w, i) => ({
+      x: JUMBLED_X[i] - 4.5,
+      y: 0,
+      z: 0,
+    })),
+    camera: { x: 0, y: 0, z: 18 },
+    target: { x: 0, y: 0, z: 0 },
+    showAxes: [],
+  },
+  {
+    label: 'Stage 4 of 7',
+    title: "Dimension 1: How 'Animal' is it?",
+    body: `<p>Let's create a dimension &mdash; something we score each word on. Our first: how strongly each word relates to <strong>animals</strong>.</p>
+           <p>${tag(WORDS[2])} scores highest &mdash; it's the most animal-like word. ${tag(WORDS[0])} and ${tag(WORDS[1])} are close behind &mdash; they're animals too, even if we also eat them.</p>
+           <p>${tag(WORDS[3])} and ${tag(WORDS[4])} score low &mdash; neither has much to do with animals.</p>
+           <p>Already, a pattern emerges: the <em>animal words</em> cluster to the right.</p>`,
+    getPositions: () => WORDS.map(w => ({
+      x: w.animal - 5,
+      y: 0,
+      z: 0,
+    })),
+    camera: { x: 0, y: 0, z: 18 },
+    target: { x: 0, y: 0, z: 0 },
+    showAxes: ['animal'],
+  },
+  {
+    label: 'Stage 5 of 7',
+    title: "Dimension 2: How 'Food' is it?",
+    body: `<p>Now we add a second dimension: how strongly each word relates to <strong>food</strong>.</p>
+           <p>${tag(WORDS[0])} and ${tag(WORDS[1])} rise high &mdash; both are common foods. ${tag(WORDS[4])} also rises &mdash; a cookbook is all about food.</p>
+           <p>${tag(WORDS[2])} drops low on the food axis &mdash; dogs aren't food (usually). And ${tag(WORDS[3])} stays at the bottom.</p>
+           <p>Notice how ${tag(WORDS[0])} and ${tag(WORDS[4])} are now near each other &mdash; both score high on food, though for different reasons.</p>`,
+    getPositions: () => WORDS.map(w => ({
+      x: w.animal - 5,
+      y: w.food - 5,
+      z: 0,
+    })),
+    camera: { x: 0, y: 0, z: 18 },
+    target: { x: 0, y: 0, z: 0 },
+    showAxes: ['animal', 'food'],
+  },
+  {
+    label: 'Stage 6 of 7',
+    title: "Dimension 3: How 'Abstract' is it?",
+    body: `<p>The third dimension captures <strong>abstractness</strong> &mdash; is the word a concrete, physical thing, or an abstract concept?</p>
+           <p>${tag(WORDS[3])} leaps forward &mdash; it's the only truly abstract word here. ${tag(WORDS[4])} moves slightly &mdash; it's a physical object but represents knowledge.</p>
+           <p>The rest &mdash; ${tag(WORDS[0])}, ${tag(WORDS[1])}, ${tag(WORDS[2])} &mdash; stay near the back. They're all concrete, tangible things.</p>
+           <p>${tag(WORDS[3])} is now clearly <em>separated</em> from every other word. Three dimensions reveal what one could not.</p>`,
+    getPositions: () => WORDS.map(w => ({
+      x: w.animal - 5,
+      y: w.food - 5,
+      z: w.abs - 5,
+    })),
+    camera: { x: 12, y: 8, z: 12 },
+    target: { x: 0, y: 0, z: 0 },
+    showAxes: ['animal', 'food', 'abstractness'],
+  },
+  {
+    label: 'Stage 7 of 7',
+    title: 'More dimensions, richer meaning',
+    body: `<p>Real language models use <strong>768 to 12,288 dimensions</strong> &mdash; not just three. GPT-3, for example, uses 12,288. Each dimension captures a different facet of meaning: sentiment, formality, temporality, and countless others.</p>
+           <p>In this space, words with similar meanings land near each other. ${tag(WORDS[0])} and ${tag(WORDS[1])} are close &mdash; both are edible animals. ${tag(WORDS[3])} is far from everything else.</p>
+           <p>How does a model pick these dimensions and score words on them? It guesses &mdash; then checks how well the guesses fit the data. That's essentially what <strong>training</strong> is. We'll come back to that.</p>
+           <p>And real models don't use whole words &mdash; they use <em>tokens</em>, pieces of words. That's what we'll explore next.</p>`,
+    getPositions: () => WORDS.map(w => ({
+      x: w.animal - 5,
+      y: w.food - 5,
+      z: w.abs - 5,
+    })),
+    camera: { x: 10, y: 7, z: 10 },
+    target: { x: 0, y: 0, z: 0 },
+    showAxes: ['animal', 'food', 'abstractness'],
+    showConnections: true,
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.012);
+
+const camera = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera.position.set(0, 2, 28);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 8;
+controls.maxDistance = 40;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.5;
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight.position.set(-5, 5, 5);
+scene.add(pointLight);
+
+const gridHelper = new THREE.GridHelper(20, 20, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.4;
+scene.add(gridHelper);
+
+/* ===================================================================
+   UTILITIES
+   =================================================================== */
+
+function makeTextSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = 'bold 32px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 24;
+  const ph = 40;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(3, 0.75, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeAxisLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 48;
+
+  ctx.font = 'bold 24px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},0.9)`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(3.5, 0.65, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   WORD SPHERES & LABELS
+   =================================================================== */
+
+const wordObjects = WORDS.map((w, i) => {
+  const geo = new THREE.SphereGeometry(0.35, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.color,
+    emissive: w.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+
+  const glowGeo = new THREE.SphereGeometry(0.55, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: w.color,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+
+  scene.add(mesh);
+
+  const label = makeTextSprite(w.name, w.color);
+  scene.add(label);
+
+  return { mesh, label, glow, targetPos: new THREE.Vector3() };
+});
+
+/* ===================================================================
+   AMBIENT WORD SPRITES (intro stages)
+   =================================================================== */
+
+const ambientGroup = new THREE.Group();
+scene.add(ambientGroup);
+
+const ambientSprites = AMBIENT_DATA.map(d => {
+  const sprite = makeTextSprite(d.text, 0x667788);
+  sprite.scale.set(2.2, 0.55, 1);
+  sprite.position.set(d.x, d.y, d.z);
+  sprite.material.opacity = 0;
+  sprite.userData.baseY = d.y;
+  ambientGroup.add(sprite);
+  return sprite;
+});
+
+/* ===================================================================
+   AXES
+   =================================================================== */
+
+const axisGroup = new THREE.Group();
+scene.add(axisGroup);
+
+const AXIS_LEN = 6;
+const AXIS_DEFS = {
+  animal: {
+    dir: new THREE.Vector3(1, 0, 0),
+    color: 0x42a5f5,
+    labelText: 'Animal',
+    labelOffset: new THREE.Vector3(AXIS_LEN + 1.2, 0, 0),
+  },
+  food: {
+    dir: new THREE.Vector3(0, 1, 0),
+    color: 0xffb74d,
+    labelText: 'Food',
+    labelOffset: new THREE.Vector3(0, AXIS_LEN + 1.2, 0),
+  },
+  abstractness: {
+    dir: new THREE.Vector3(0, 0, 1),
+    color: 0xab47bc,
+    labelText: 'Abstractness',
+    labelOffset: new THREE.Vector3(0, 0, AXIS_LEN + 1.2),
+  },
+};
+
+const axisObjects = {};
+
+Object.entries(AXIS_DEFS).forEach(([key, def]) => {
+  const points = [
+    def.dir.clone().multiplyScalar(-AXIS_LEN),
+    def.dir.clone().multiplyScalar(AXIS_LEN),
+  ];
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: 0 });
+  const line = new THREE.Line(geo, mat);
+  axisGroup.add(line);
+
+  const coneGeo = new THREE.ConeGeometry(0.12, 0.4, 8);
+  const coneMat = new THREE.MeshBasicMaterial({ color: def.color, transparent: true, opacity: 0 });
+  const cone = new THREE.Mesh(coneGeo, coneMat);
+  cone.position.copy(def.dir.clone().multiplyScalar(AXIS_LEN));
+  if (key === 'animal') cone.rotation.z = -Math.PI / 2;
+  else if (key === 'food') cone.rotation.z = 0;
+  else if (key === 'abstractness') cone.rotation.x = Math.PI / 2;
+  axisGroup.add(cone);
+
+  const label = makeAxisLabel(def.labelText, def.color);
+  label.position.copy(def.labelOffset);
+  label.material.opacity = 0;
+  axisGroup.add(label);
+
+  axisObjects[key] = { line, cone, label, targetOpacity: 0 };
+});
+
+/* ===================================================================
+   CONNECTION LINES (last stage)
+   =================================================================== */
+
+const connectionGroup = new THREE.Group();
+scene.add(connectionGroup);
+let connectionLines = [];
+
+function buildConnections() {
+  connectionLines.forEach(l => connectionGroup.remove(l));
+  connectionLines = [];
+
+  const positions = STAGES[STAGES.length - 1].getPositions();
+  for (let i = 0; i < WORDS.length; i++) {
+    for (let j = i + 1; j < WORDS.length; j++) {
+      const pi = positions[i];
+      const pj = positions[j];
+      const dist = Math.sqrt((pi.x-pj.x)**2 + (pi.y-pj.y)**2 + (pi.z-pj.z)**2);
+      const alpha = Math.max(0, 1 - dist / 10) * 0.35;
+      if (alpha < 0.02) continue;
+
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(pi.x, pi.y, pi.z),
+        new THREE.Vector3(pj.x, pj.y, pj.z),
+      ]);
+
+      const ci = new THREE.Color(WORDS[i].color);
+      const cj = new THREE.Color(WORDS[j].color);
+      const midColor = ci.clone().lerp(cj, 0.5);
+
+      const mat = new THREE.LineBasicMaterial({
+        color: midColor,
+        transparent: true,
+        opacity: 0,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.userData.targetOpacity = alpha;
+      connectionGroup.add(line);
+      connectionLines.push(line);
+    }
+  }
+}
+
+buildConnections();
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  if (stageIdx === STAGES.length - 1) {
+    btnNext.disabled = false;
+    btnNext.innerHTML = 'Next Chapter <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+  } else {
+    btnNext.disabled = false;
+    btnNext.innerHTML = 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+  }
+}
+
+/* ===================================================================
+   ANIMATION STATE
+   =================================================================== */
+
+const animState = {
+  cameraTarget: new THREE.Vector3(),
+  controlsTarget: new THREE.Vector3(),
+  axisOpacities: { animal: 0, food: 0, abstractness: 0 },
+  showConnections: false,
+  autoRotate: false,
+  showAmbient: true,
+};
+
+function setTargetsForStage(stageIdx) {
+  const s = STAGES[stageIdx];
+  const positions = s.getPositions();
+
+  positions.forEach((p, i) => {
+    wordObjects[i].targetPos.set(p.x, p.y, p.z);
+  });
+
+  animState.cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  animState.controlsTarget.set(s.target.x, s.target.y, s.target.z);
+
+  Object.keys(axisObjects).forEach(key => {
+    axisObjects[key].targetOpacity = s.showAxes.includes(key) ? 0.6 : 0;
+  });
+
+  animState.showConnections = !!s.showConnections;
+  animState.autoRotate = stageIdx >= 5;
+  animState.showAmbient = !!s.showAmbient;
+}
+
+const NEXT_CHAPTER_URL = 'completions/';
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+setTargetsForStage(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+const initPositions = STAGES[0].getPositions();
+initPositions.forEach((p, i) => {
+  wordObjects[i].mesh.position.set(p.x, p.y, p.z);
+  wordObjects[i].label.position.set(p.x, p.y + 0.8, p.z);
+});
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => {
+  if (currentStage === STAGES.length - 1) {
+    window.location.href = NEXT_CHAPTER_URL;
+  } else {
+    goToStage(currentStage + 1);
+  }
+});
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    if (currentStage === STAGES.length - 1) {
+      window.location.href = NEXT_CHAPTER_URL;
+    } else {
+      goToStage(currentStage + 1);
+    }
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Lerp word positions
+  wordObjects.forEach((wo, i) => {
+    wo.mesh.position.lerp(wo.targetPos, lerpSpeed);
+    wo.label.position.set(
+      wo.mesh.position.x,
+      wo.mesh.position.y + 0.8,
+      wo.mesh.position.z
+    );
+    wo.mesh.position.y += Math.sin(t * 1.2 + i * 1.7) * 0.003;
+    wo.glow.material.opacity = 0.08 + Math.sin(t * 2 + i * 1.3) * 0.04;
+  });
+
+  // Lerp camera
+  camera.position.lerp(animState.cameraTarget, lerpSpeed * 0.7);
+  controls.target.lerp(animState.controlsTarget, lerpSpeed * 0.7);
+  controls.autoRotate = animState.autoRotate;
+
+  // Lerp axis opacities
+  Object.entries(axisObjects).forEach(([key, ao]) => {
+    const target = ao.targetOpacity;
+    ao.line.material.opacity += (target - ao.line.material.opacity) * lerpSpeed * 1.5;
+    ao.cone.material.opacity = ao.line.material.opacity;
+    ao.label.material.opacity = ao.line.material.opacity;
+  });
+
+  // Connection lines
+  connectionLines.forEach(line => {
+    const target = animState.showConnections ? line.userData.targetOpacity : 0;
+    line.material.opacity += (target - line.material.opacity) * lerpSpeed;
+  });
+
+  // Ambient word sprites
+  const ambientTargetOpacity = animState.showAmbient ? 0.5 : 0;
+  ambientSprites.forEach((sprite, i) => {
+    sprite.material.opacity += (ambientTargetOpacity - sprite.material.opacity) * lerpSpeed;
+    sprite.position.y = sprite.userData.baseY + Math.sin(t * 0.4 + i * 1.9) * 0.3;
+  });
+
+  gridHelper.rotation.y = t * 0.02;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+</script>
+</body>
+</html>

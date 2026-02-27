@@ -5,7 +5,7 @@ serve:
 	@echo "Opening landing page in browser..."
 	@python3 -m http.server $(PORT) &
 	@sleep 1
-	@open http://localhost:$(PORT)/chapters/01-embeddings/index.html
+	@open http://localhost:$(PORT)/
 	@wait
 
 deploy:
