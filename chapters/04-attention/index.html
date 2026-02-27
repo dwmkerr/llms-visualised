@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ch 04: Attention</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .highlight {
+    display: inline;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+  }
+
+  .hl-token    { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .hl-vector   { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .hl-layer    { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .hl-predict  { background: rgba(102,187,106,0.2); color: #2e7d32; }
+  .hl-cycle    { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) { background: #222; color: #fff; }
+  .nav-btn:disabled { opacity: 0.25; cursor: default; }
+  .nav-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+  #progress { display: flex; gap: 0.6rem; align-items: center; }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+  .dot.active { background: #222; transform: scale(1.3); }
+  .dot.visited { background: #888; }
+
+  #viz-panel { flex: 1; position: relative; height: 100vh; }
+  #viz-panel canvas { display: block; }
+
+  #narrative-content { transition: opacity 0.35s ease; }
+  #narrative-content.fading { opacity: 0; }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'Tokens in sequence',
+    body: `<p>After tokenization and embedding, we have a sequence of <span class="highlight hl-token">token vectors</span> &mdash; one for each word in the input.</p>
+           <p>At this point, each token only knows about itself. <strong>"bank"</strong> doesn't know if it's a river bank or a financial bank. <strong>"it"</strong> doesn't know what it refers to.</p>
+           <p>The transformer must let these tokens <em>communicate</em> with each other. That's what <span class="highlight hl-layer">attention</span> does.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Every token queries every other',
+    body: `<p>Each token produces three vectors: a <span class="highlight hl-vector">Query</span> (what am I looking for?), a <span class="highlight hl-predict">Key</span> (what do I contain?), and a <span class="highlight hl-token">Value</span> (what do I contribute?).</p>
+           <p>Every token's Query is compared against every other token's Key. The dot product of Query and Key becomes an <strong>attention score</strong>.</p>
+           <p>This happens between all pairs simultaneously &mdash; a full N&times;N matrix of interactions.</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Weights: strong and weak connections',
+    body: `<p>Attention scores are passed through softmax to become <span class="highlight hl-cycle">attention weights</span> &mdash; values between 0 and 1 that sum to 1 for each token.</p>
+           <p>Some connections are <strong>bright and strong</strong> &mdash; "the" strongly attends to the noun it modifies. Others are <strong>dim and weak</strong> &mdash; distant irrelevant tokens barely interact.</p>
+           <p>Watch how the lines between tokens vary in brightness, showing which pairs the model finds most relevant.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Context-dependent understanding',
+    body: `<p>The same word <span class="highlight hl-cycle">"bank"</span> attends to very different tokens depending on context. Surrounded by "river" and "shore", it attends to those. Near "loan" and "account", it shifts entirely.</p>
+           <p>This is how the transformer resolves ambiguity &mdash; not through rules, but through learned attention patterns that activate differently per context.</p>
+           <p>Each token's final representation is a <strong>weighted sum</strong> of all other tokens' Values, shaped by those attention weights.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Multi-head attention',
+    body: `<p>Transformers run <span class="highlight hl-layer">multiple attention heads</span> in parallel. Each head learns to focus on different types of relationships.</p>
+           <p>One head might track <strong>grammatical dependencies</strong> (subject&ndash;verb agreement). Another might track <strong>coreference</strong> (what "it" refers to). Another captures <strong>semantic similarity</strong>.</p>
+           <p>Their outputs are concatenated and projected, giving the model a rich, multi-faceted view of context at every layer.</p>`,
+  },
+];
+
+/* ====================== THREE.JS SETUP ====================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.006);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 4, 18);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 40;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+scene.add(new THREE.PointLight(0x3366ff, 0.35, 60)).position.set(-8, 8, 5);
+
+const gridHelper = new THREE.GridHelper(30, 30, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.25;
+scene.add(gridHelper);
+
+/* ====================== UTILITIES ====================== */
+
+function makeTextSprite(text, color, fontSize = 26, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512; canvas.height = 64;
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 28, ph = 44;
+  const px = (canvas.width - pw) / 2, py = (canvas.height - ph) / 2;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, px, py, pw, ph, 8); ctx.fill();
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width/2, canvas.height/2 + 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y); ctx.closePath();
+}
+
+function makeGlowSphere(radius, color, emissiveIntensity = 0.45) {
+  const mat = new THREE.MeshStandardMaterial({
+    color, emissive: color, emissiveIntensity, roughness: 0.25, metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 32), mat);
+  const glowMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12 });
+  mesh.add(new THREE.Mesh(new THREE.SphereGeometry(radius * 1.7, 32, 32), glowMat));
+  return mesh;
+}
+
+/* ====================== TOKEN DATA ====================== */
+
+// Arranged in a gentle arc
+const TOKENS = [
+  { word: 'The',    color: 0xffb74d },
+  { word: 'river',  color: 0x42a5f5 },
+  { word: 'bank',   color: 0xef5350 },
+  { word: 'was',    color: 0x66bb6a },
+  { word: 'steep',  color: 0xab47bc },
+];
+
+const N = TOKENS.length;
+const ARC_RADIUS = 5;
+const TOKEN_POSITIONS = TOKENS.map((_, i) => {
+  const angle = ((i / (N - 1)) - 0.5) * Math.PI * 0.8;
+  return new THREE.Vector3(Math.sin(angle) * ARC_RADIUS, 0, -Math.cos(angle) * ARC_RADIUS * 0.4);
+});
+
+// Attention weights: "bank" attends strongly to "river" in this river context
+const ATTENTION_WEIGHTS = [
+  // from "The"  to: The,  river, bank,  was,   steep
+  [0.05, 0.25, 0.35, 0.20, 0.15],
+  // from "river" to:
+  [0.10, 0.15, 0.50, 0.15, 0.10],
+  // from "bank" to:
+  [0.08, 0.60, 0.10, 0.12, 0.10],
+  // from "was" to:
+  [0.15, 0.20, 0.30, 0.10, 0.25],
+  // from "steep" to:
+  [0.10, 0.15, 0.35, 0.20, 0.20],
+];
+
+/* ====================== STAGE GROUPS ====================== */
+
+const stageGroup = new THREE.Group();
+scene.add(stageGroup);
+
+// --- Stage 1: Isolated tokens ---
+const s1Group = new THREE.Group();
+stageGroup.add(s1Group);
+
+const s1Spheres = TOKENS.map((tok, i) => {
+  const sphere = makeGlowSphere(0.55, tok.color);
+  sphere.position.copy(TOKEN_POSITIONS[i]);
+  s1Group.add(sphere);
+  const lbl = makeTextSprite(tok.word, tok.color, 28);
+  lbl.scale.set(3.5, 0.5, 1);
+  lbl.position.set(TOKEN_POSITIONS[i].x, TOKEN_POSITIONS[i].y + 1.15, TOKEN_POSITIONS[i].z);
+  s1Group.add(lbl);
+  return sphere;
+});
+
+// --- Stage 2: QKV query rays ---
+const s2Group = new THREE.Group();
+stageGroup.add(s2Group);
+
+const s2Spheres = TOKENS.map((tok, i) => {
+  const sphere = makeGlowSphere(0.55, tok.color);
+  sphere.position.copy(TOKEN_POSITIONS[i]);
+  s2Group.add(sphere);
+  const lbl = makeTextSprite(tok.word, tok.color, 28);
+  lbl.scale.set(3.5, 0.5, 1);
+  lbl.position.set(TOKEN_POSITIONS[i].x, TOKEN_POSITIONS[i].y + 1.15, TOKEN_POSITIONS[i].z);
+  s2Group.add(lbl);
+  return sphere;
+});
+
+// Query rays from each token to a center point (representing QK dot products)
+const CENTER = new THREE.Vector3(0, 2.5, 0);
+const queryLines = [];
+TOKENS.forEach((tok, i) => {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([TOKEN_POSITIONS[i].clone(), CENTER.clone()]),
+    new THREE.LineBasicMaterial({ color: tok.color, transparent: true, opacity: 0 })
+  );
+  s2Group.add(line);
+  queryLines.push(line);
+});
+
+// QKV labels
+const qkvLabel = makeTextSprite('Q · K → attention scores', 0xaaaaff, 22, 0.75);
+qkvLabel.scale.set(6, 0.45, 1);
+qkvLabel.position.set(0, 4.2, 0);
+s2Group.add(qkvLabel);
+
+// Center sphere representing computation
+const qkSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(0.3, 20, 20),
+  new THREE.MeshStandardMaterial({ color: 0xaaaaff, emissive: 0xaaaaff, emissiveIntensity: 0.5, roughness: 0.3 })
+);
+qkSphere.position.copy(CENTER);
+s2Group.add(qkSphere);
+
+// --- Stage 3: Attention weight lines ---
+const s3Group = new THREE.Group();
+stageGroup.add(s3Group);
+
+const s3Spheres = TOKENS.map((tok, i) => {
+  const sphere = makeGlowSphere(0.55, tok.color);
+  sphere.position.copy(TOKEN_POSITIONS[i]);
+  s3Group.add(sphere);
+  const lbl = makeTextSprite(tok.word, tok.color, 28);
+  lbl.scale.set(3.5, 0.5, 1);
+  lbl.position.set(TOKEN_POSITIONS[i].x, TOKEN_POSITIONS[i].y + 1.15, TOKEN_POSITIONS[i].z);
+  s3Group.add(lbl);
+  return sphere;
+});
+
+// All-pairs attention lines
+const attLines = [];
+for (let i = 0; i < N; i++) {
+  const rowLines = [];
+  for (let j = 0; j < N; j++) {
+    const weight = ATTENTION_WEIGHTS[i][j];
+    const col = new THREE.Color(TOKENS[j].color);
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([TOKEN_POSITIONS[i].clone(), TOKEN_POSITIONS[j].clone()]),
+      new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0 })
+    );
+    line.userData = { weight, i, j };
+    s3Group.add(line);
+    rowLines.push(line);
+  }
+  attLines.push(rowLines);
+}
+
+// --- Stage 4: Context-dependent — "bank" attends differently ---
+const s4Group = new THREE.Group();
+stageGroup.add(s4Group);
+
+// Two versions of the sentence: river context vs financial context
+const CONTEXT_A = {
+  tokens: ['The', 'river', 'bank', 'was', 'steep'],
+  colors: [0xffb74d, 0x42a5f5, 0xef5350, 0x66bb6a, 0xab47bc],
+  // bank attends to: The(low), river(high!), bank(self), was(low), steep(medium)
+  bankWeights: [0.05, 0.72, 0.05, 0.08, 0.10],
+};
+const CONTEXT_B = {
+  tokens: ['My', 'bank', 'account', 'is', 'empty'],
+  colors: [0xffb74d, 0xef5350, 0x29b6f6, 0x66bb6a, 0xab47bc],
+  // bank attends to: My(low), bank(self), account(high!), is(low), empty(medium)
+  bankWeights: [0.06, 0.05, 0.70, 0.08, 0.11],
+};
+
+const CONTEXTS = [CONTEXT_A, CONTEXT_B];
+const CTX_POSITIONS = TOKEN_POSITIONS.map((p, i) => new THREE.Vector3(p.x, p.y + (i === 0 ? 0 : 0), p.z));
+
+// "Bank" sphere index in both contexts
+const BANK_IDX = 1; // index of "bank" in context A
+const BANK_IDX_B = 1; // index of "bank" in context B
+
+// We show both contexts stacked vertically
+const CTX_Y_OFFSET = [-3.5, 3.5];
+
+const s4ContextGroups = [];
+const s4AttLines = [];
+
+CONTEXTS.forEach((ctx, ci) => {
+  const ctxGroup = new THREE.Group();
+  s4Group.add(ctxGroup);
+  s4ContextGroups.push(ctxGroup);
+
+  const yOff = CTX_Y_OFFSET[ci];
+  const bankPos = new THREE.Vector3(TOKEN_POSITIONS[BANK_IDX].x, yOff, TOKEN_POSITIONS[BANK_IDX].z);
+
+  const ctxLines = [];
+  ctx.tokens.forEach((word, i) => {
+    const pos = new THREE.Vector3(TOKEN_POSITIONS[i].x, yOff, TOKEN_POSITIONS[i].z);
+    const isBankToken = word === 'bank';
+
+    const sphere = makeGlowSphere(isBankToken ? 0.65 : 0.48, ctx.colors[i], isBankToken ? 0.65 : 0.4);
+    sphere.position.copy(pos);
+    ctxGroup.add(sphere);
+
+    const lbl = makeTextSprite(word, ctx.colors[i], isBankToken ? 30 : 26);
+    lbl.scale.set(isBankToken ? 4 : 3.5, 0.5, 1);
+    lbl.position.set(pos.x, pos.y + (isBankToken ? 1.3 : 1.1), pos.z);
+    ctxGroup.add(lbl);
+
+    // Attention line from "bank" to this token
+    const bankWeight = ci === 0 ? CONTEXT_A.bankWeights[i] : CONTEXT_B.bankWeights[i];
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([bankPos.clone(), pos.clone()]),
+      new THREE.LineBasicMaterial({ color: ctx.colors[i], transparent: true, opacity: 0 })
+    );
+    line.userData = { weight: bankWeight };
+    ctxGroup.add(line);
+    ctxLines.push(line);
+  });
+
+  // Context label
+  const ctxLbl = makeTextSprite(
+    ci === 0 ? '"bank" → river context' : '"bank" → financial context',
+    ci === 0 ? 0x42a5f5 : 0xffb74d, 20, 0.7
+  );
+  ctxLbl.scale.set(6.5, 0.42, 1);
+  ctxLbl.position.set(0, yOff - 1.6, 0);
+  s4Group.add(ctxLbl);
+
+  s4AttLines.push(ctxLines);
+});
+
+// --- Stage 5: Multi-head attention (3 heads with different colors) ---
+const s5Group = new THREE.Group();
+stageGroup.add(s5Group);
+
+// Head colors and names
+const HEADS = [
+  { name: 'Head 1: syntax',   color: 0xffb74d, weights: [[0.4,0.3,0.15,0.1,0.05],[0.15,0.4,0.2,0.15,0.1],[0.1,0.3,0.35,0.15,0.1],[0.1,0.15,0.25,0.35,0.15],[0.08,0.12,0.15,0.3,0.35]] },
+  { name: 'Head 2: semantics', color: 0x42a5f5, weights: [[0.1,0.4,0.3,0.12,0.08],[0.12,0.15,0.55,0.1,0.08],[0.08,0.62,0.12,0.1,0.08],[0.1,0.2,0.3,0.25,0.15],[0.08,0.15,0.35,0.18,0.24]] },
+  { name: 'Head 3: position',  color: 0xab47bc, weights: [[0.5,0.25,0.12,0.08,0.05],[0.3,0.4,0.15,0.1,0.05],[0.15,0.25,0.35,0.18,0.07],[0.08,0.15,0.22,0.4,0.15],[0.05,0.1,0.15,0.3,0.4]] },
+];
+
+const s5Spheres = TOKENS.map((tok, i) => {
+  const sphere = makeGlowSphere(0.52, tok.color);
+  sphere.position.copy(TOKEN_POSITIONS[i]);
+  s5Group.add(sphere);
+  const lbl = makeTextSprite(tok.word, tok.color, 28);
+  lbl.scale.set(3.5, 0.5, 1);
+  lbl.position.set(TOKEN_POSITIONS[i].x, TOKEN_POSITIONS[i].y + 1.1, TOKEN_POSITIONS[i].z);
+  s5Group.add(lbl);
+  return sphere;
+});
+
+// Head labels
+HEADS.forEach((head, hi) => {
+  const lbl = makeTextSprite(head.name, head.color, 20, 0.7);
+  lbl.scale.set(5, 0.4, 1);
+  lbl.position.set(0, -2.2 - hi * 0.9, 0);
+  s5Group.add(lbl);
+});
+
+// Multi-head attention lines — each head at slightly different z depth
+const multiHeadLines = [];
+HEADS.forEach((head, hi) => {
+  const headLines = [];
+  for (let i = 0; i < N; i++) {
+    for (let j = 0; j < N; j++) {
+      if (i === j) continue;
+      const weight = head.weights[i][j];
+      const zOff = (hi - 1) * 0.3;
+      const pFrom = TOKEN_POSITIONS[i].clone(); pFrom.z += zOff;
+      const pTo   = TOKEN_POSITIONS[j].clone(); pTo.z   += zOff;
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([pFrom, pTo]),
+        new THREE.LineBasicMaterial({ color: head.color, transparent: true, opacity: 0 })
+      );
+      line.userData = { weight, headIdx: hi };
+      s5Group.add(line);
+      headLines.push(line);
+    }
+  }
+  multiHeadLines.push(headLines);
+});
+
+/* ====================== STAGE CONFIG ====================== */
+
+const allGroups = [s1Group, s2Group, s3Group, s4Group, s5Group];
+
+const stageConfigs = [
+  { camera: { x: 0, y: 3.5, z: 14 }, target: { x: 0, y: 0.5, z: 0 }, autoRotate: false },
+  { camera: { x: 2, y: 5, z: 14 },   target: { x: 0, y: 1.5, z: 0 }, autoRotate: false },
+  { camera: { x: 0, y: 4, z: 13 },   target: { x: 0, y: 0.5, z: 0 }, autoRotate: true  },
+  { camera: { x: 0, y: 3, z: 18 },   target: { x: 0, y: 0,   z: 0 }, autoRotate: false },
+  { camera: { x: 3, y: 5, z: 15 },   target: { x: 0, y: 0.5, z: 0 }, autoRotate: true  },
+];
+
+function setStageVisibility(idx) {
+  allGroups.forEach((g, i) => { g.visible = i === idx; });
+}
+
+/* ====================== NAVIGATION ====================== */
+
+let currentStage = 0;
+const cameraTarget  = new THREE.Vector3(0, 3.5, 14);
+const controlsTarget = new THREE.Vector3(0, 0.5, 0);
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(idx) {
+  const s = STAGES[idx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `<div class="stage-label">${s.label}</div><h2 class="stage-title">${s.title}</h2><div class="stage-body">${s.body}</div>`;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(idx) {
+  progressContainer.querySelectorAll('.dot').forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === idx) d.classList.add('active');
+    else if (i < idx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(idx) {
+  btnPrev.disabled = idx === 0;
+  btnNext.disabled = idx === STAGES.length - 1;
+  btnNext.innerHTML = idx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  const cfg = stageConfigs[idx];
+  cameraTarget.set(cfg.camera.x, cfg.camera.y, cfg.camera.z);
+  controlsTarget.set(cfg.target.x, cfg.target.y, cfg.target.z);
+  setStageVisibility(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+  stageStartTime = clock.getElapsedTime();
+}
+
+let stageStartTime = 0;
+setStageVisibility(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goToStage(currentStage + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); goToStage(currentStage - 1); }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth, h = vizPanel.clientHeight;
+  camera3D.aspect = w / h;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ====================== RENDER LOOP ====================== */
+
+const clock = new THREE.Clock();
+
+// Track currently-highlighted attention focus token for stage 3
+let highlightIdx = 0;
+let nextHighlightTime = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const stageT = t - stageStartTime;
+  const lerpSpeed = 2.5 * dt;
+
+  camera3D.position.lerp(cameraTarget, lerpSpeed * 0.7);
+  controls.target.lerp(controlsTarget, lerpSpeed * 0.7);
+  controls.autoRotate = stageConfigs[currentStage].autoRotate;
+  gridHelper.rotation.y = t * 0.012;
+
+  if (currentStage === 0) {
+    // Stage 1: gentle float
+    s1Spheres.forEach((s, i) => {
+      const base = TOKEN_POSITIONS[i];
+      s.position.set(base.x + Math.sin(t*0.7+i*1.5)*0.1, base.y + Math.sin(t*0.9+i*2)*0.15, base.z + Math.cos(t*0.6+i)*0.1);
+      if (s.children[0]) s.children[0].material.opacity = 0.08 + Math.sin(t*2+i)*0.05;
+    });
+  }
+
+  if (currentStage === 1) {
+    // Stage 2: query lines animate in
+    s2Spheres.forEach((s, i) => {
+      const base = TOKEN_POSITIONS[i];
+      s.position.set(base.x + Math.sin(t*0.7+i*1.5)*0.08, base.y + Math.sin(t*0.9+i*2)*0.1, base.z);
+      if (s.children[0]) s.children[0].material.opacity = 0.08 + Math.sin(t*2+i)*0.04;
+    });
+
+    // Animate query lines: each fires sequentially
+    queryLines.forEach((line, i) => {
+      const pulse = (Math.sin(t * 1.8 + i * 1.2) * 0.5 + 0.5);
+      line.material.opacity = Math.min(stageT / 1.5, 1) * pulse * 0.5;
+    });
+
+    // QK center sphere pulses
+    const p = 1 + Math.sin(t * 3) * 0.2;
+    qkSphere.scale.setScalar(p);
+    qkSphere.material.emissiveIntensity = 0.4 + Math.sin(t*3)*0.2;
+  }
+
+  if (currentStage === 2) {
+    // Stage 3: cycle through which token is "attending"
+    if (t > nextHighlightTime) {
+      highlightIdx = (highlightIdx + 1) % N;
+      nextHighlightTime = t + 1.5;
+    }
+
+    // Show attention lines from highlightIdx to all others
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const line = attLines[i][j];
+        const isActive = i === highlightIdx;
+        const weight = ATTENTION_WEIGHTS[i][j];
+        const targetOpacity = isActive ? weight * 0.9 : 0.02;
+        line.material.opacity += (targetOpacity - line.material.opacity) * 8 * dt;
+      }
+    }
+
+    // Float spheres
+    s3Spheres.forEach((s, i) => {
+      const base = TOKEN_POSITIONS[i];
+      const scale = i === highlightIdx ? 1.15 + Math.sin(t*3)*0.08 : 1.0;
+      s.scale.setScalar(scale);
+      s.position.set(base.x + Math.sin(t*0.7+i*1.5)*0.08, base.y + Math.sin(t*0.9+i*2)*0.1, base.z);
+      if (s.children[0]) s.children[0].material.opacity = (i === highlightIdx ? 0.18 : 0.08) + Math.sin(t*2+i)*0.04;
+    });
+  }
+
+  if (currentStage === 3) {
+    // Stage 4: animate attention lines for both contexts
+    s4AttLines.forEach((ctxLines, ci) => {
+      ctxLines.forEach((line, i) => {
+        const w = line.userData.weight;
+        const pulse = Math.sin(t * 2 + i * 0.7) * 0.15 + 0.85;
+        const targetOpacity = w * 0.85 * pulse * Math.min(stageT / 1.5, 1);
+        line.material.opacity += (targetOpacity - line.material.opacity) * 5 * dt;
+      });
+    });
+
+    // Float context spheres
+    s4ContextGroups.forEach((ctxGroup, ci) => {
+      const yOff = CTX_Y_OFFSET[ci];
+      ctxGroup.children.forEach((child, i) => {
+        if (child.isMesh && child.geometry.type === 'SphereGeometry') {
+          const base = TOKEN_POSITIONS[i % N];
+          if (base) {
+            child.position.x = base.x + Math.sin(t*0.7+i*1.3)*0.08;
+            child.position.y = yOff + Math.sin(t*0.9+i*1.8)*0.1;
+          }
+        }
+      });
+    });
+  }
+
+  if (currentStage === 4) {
+    // Stage 5: cycle through heads
+    const headCycleTime = 2.5;
+    const activeHead = Math.floor(stageT / headCycleTime) % HEADS.length;
+
+    multiHeadLines.forEach((headLines, hi) => {
+      const isActive = hi === activeHead;
+      headLines.forEach(line => {
+        const targetOpacity = isActive ? line.userData.weight * 0.8 : 0.02;
+        line.material.opacity += (targetOpacity - line.material.opacity) * 5 * dt;
+      });
+    });
+
+    s5Spheres.forEach((s, i) => {
+      const base = TOKEN_POSITIONS[i];
+      s.position.set(base.x + Math.sin(t*0.6+i*1.5)*0.08, base.y + Math.sin(t*0.8+i*1.8)*0.1, base.z);
+      if (s.children[0]) s.children[0].material.opacity = 0.08 + Math.sin(t*2+i)*0.04;
+    });
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+</script>
+</body>
+</html>

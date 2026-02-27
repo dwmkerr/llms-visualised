@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Softmax: From Logits to Probabilities</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden; height: 100vh; width: 100vw; display: flex; background: #0a0a0f;
+  }
+
+  #narrative-panel {
+    width: 40%; min-width: 340px; height: 100vh; background: #fafafa;
+    display: flex; flex-direction: column; position: relative; z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 3rem 2.5rem; overflow-y: auto; transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  .stage-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #888; margin-bottom: 1rem; }
+  .stage-title { font-size: 1.9rem; font-weight: 700; color: #111; line-height: 1.25; margin-bottom: 1.2rem; }
+  .stage-body { font-size: 1.05rem; line-height: 1.7; color: #444; font-weight: 400; }
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .highlight { display: inline; padding: 0.1em 0.35em; border-radius: 4px; font-weight: 600; font-size: 0.95em; }
+  .hl-token  { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .hl-vector { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .hl-layer  { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .hl-predict{ background: rgba(102,187,106,0.2); color: #2e7d32; }
+  .hl-cycle  { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+  #nav-bar { display: flex; align-items: center; justify-content: space-between; padding: 1.2rem 2.5rem; border-top: 1px solid #e0e0e0; background: #fff; }
+
+  .nav-btn {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.65rem 1.5rem;
+    border: 2px solid #222; border-radius: 8px; background: #fff; color: #222;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;
+  }
+  .nav-btn:hover:not(:disabled) { background: #222; color: #fff; }
+  .nav-btn:disabled { opacity: 0.25; cursor: default; }
+  .nav-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+  #progress { display: flex; gap: 0.6rem; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; transition: all 0.35s; cursor: pointer; }
+  .dot.active  { background: #222; transform: scale(1.3); }
+  .dot.visited { background: #888; }
+
+  #viz-panel { flex: 1; position: relative; height: 100vh; }
+  #viz-panel canvas { display: block; }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ================================================================
+   STAGES
+   ================================================================ */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'Raw logits',
+    body: `<p>After the transformer processes all input tokens, its final layer outputs a vector of raw scores called <span class="highlight hl-layer">logits</span> — one number per token in the vocabulary.</p>
+           <p>These numbers are unbounded. Some are large and positive. Some are negative. They have no inherent meaning as probabilities — they're just scores that reflect the model's "preference" for each word.</p>
+           <p>Watch the chaotic bars: tall ones, short ones, some below zero. This is the raw output before any transformation.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'The exponential transform',
+    body: `<p>Softmax begins by applying <span class="highlight hl-predict">e raised to each logit</span> — the exponential function.</p>
+           <p>This does two important things: it makes all values strictly positive (even logit −5 becomes e⁻⁵ ≈ 0.007), and it amplifies differences. A logit of 4 becomes ~55; a logit of 2 becomes ~7. The gap widens dramatically.</p>
+           <p>Watch the negative bars flip upward, all becoming small positives. The big values grow even bigger, starting to dominate the picture.</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Normalizing to sum to 1',
+    body: `<p>The exponentiated values are then <span class="highlight hl-vector">divided by their sum</span>, so the total equals exactly 1.0.</p>
+           <p>Now we have a valid probability distribution. Each value is between 0 and 1, and they all sum to 1. We can legitimately interpret them as probabilities.</p>
+           <p>The formula: softmax(xᵢ) = eˣⁱ / Σeˣʲ</p>
+           <p>Watch the bars rescale. Their relative heights stay the same, but they compress into the 0–1 range.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'The probability distribution',
+    body: `<p>The result is a clean <span class="highlight hl-predict">probability distribution</span> over the vocabulary. The model can now sample from it — or take the argmax — to pick the next token.</p>
+           <p>Notice how softmax is <em>winner-takes-more</em>: the token with the highest logit gets a disproportionately large share of the probability. Small logit differences become large probability gaps.</p>
+           <p>The top candidate here — <strong>"is"</strong> — receives 45% of the probability mass despite only modestly outscoring <strong>"was"</strong> in logit space.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Temperature scaling',
+    body: `<p>Before softmax, logits are often divided by a <span class="highlight hl-cycle">temperature</span> value T. This controls how peaked the distribution becomes.</p>
+           <p><strong>T &lt; 1</strong>: divides logits by a small number, making differences larger — the distribution sharpens, top tokens dominate, output is more predictable.</p>
+           <p><strong>T &gt; 1</strong>: shrinks logit differences — the distribution flattens, lower-ranked tokens get more probability, output is more random and creative.</p>
+           <p>Temperature is the primary knob for controlling model "creativity."</p>`,
+  },
+];
+
+/* ================================================================
+   THREE.JS SETUP
+   ================================================================ */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.007);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 5, 18);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(10, 15, 10);
+scene.add(dir);
+const ptL = new THREE.PointLight(0x4466ff, 0.4, 50);
+ptL.position.set(-8, 8, 5);
+scene.add(ptL);
+
+const grid = new THREE.GridHelper(40, 40, 0x222233, 0x151520);
+grid.material.transparent = true;
+grid.material.opacity = 0.3;
+scene.add(grid);
+
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+
+function makeTextSprite(text, color, fontSize = 32, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512; canvas.height = 64;
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pw = ctx.measureText(text).width + 28, ph = 44;
+  const px = (canvas.width - pw) / 2, py = (canvas.height - ph) / 2;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, px, py, pw, ph, 8); ctx.fill();
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+const stageRoot = new THREE.Group();
+scene.add(stageRoot);
+
+/* ================================================================
+   DATA
+   ================================================================ */
+
+const TOKENS   = ['"is"',   '"was"',  '"can"', '"will"', '"the"',  '"a"',   '"ran"', '"flew"'];
+const LOGITS   = [ 3.5,     2.8,      1.2,    -0.4,     -1.1,     -2.2,    0.6,     1.9 ];
+const BAR_CLR  = [0x66bb6a, 0x42a5f5, 0x42a5f5, 0xef5350, 0xef5350, 0xef5350, 0x42a5f5, 0x42a5f5];
+
+// softmax computation
+function softmax(arr, temp = 1.0) {
+  const scaled = arr.map(v => v / temp);
+  const maxV = Math.max(...scaled);
+  const exps = scaled.map(v => Math.exp(v - maxV)); // subtract max for numerical stability
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map(v => v / sum);
+}
+
+// Exponentiated (un-normalized)
+function expValues(arr, temp = 1.0) {
+  const scaled = arr.map(v => v / temp);
+  const maxV = Math.max(...scaled);
+  return scaled.map(v => Math.exp(v - maxV));
+}
+
+const PROBS       = softmax(LOGITS);
+const EXP_VALS    = expValues(LOGITS);
+const PROBS_COLD  = softmax(LOGITS, 0.5);
+const PROBS_HOT   = softmax(LOGITS, 2.0);
+
+const N = TOKENS.length;
+const BAR_W = 1.1, BAR_DEPTH = 0.5, BAR_GAP = 0.3;
+const BAR_SPACING = BAR_W + BAR_GAP;
+const TOTAL_W = N * BAR_SPACING;
+function barX(i) { return -TOTAL_W / 2 + i * BAR_SPACING + BAR_W / 2; }
+
+/* ================================================================
+   BAR FACTORY
+   ================================================================ */
+
+function makeBar(height, color, x, positive = true) {
+  const absH = Math.max(Math.abs(height), 0.08);
+  const mat = new THREE.MeshStandardMaterial({
+    color, emissive: color,
+    emissiveIntensity: 0.25,
+    roughness: 0.35, metalness: 0.1,
+    transparent: true, opacity: 0.9,
+  });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(BAR_W, absH, BAR_DEPTH), mat);
+  // position so bar grows from y=0
+  mesh.position.set(x, height / 2, 0);
+  return mesh;
+}
+
+function makeBarGroup(heights, colors, labelTexts, showZeroLine = true) {
+  const g = new THREE.Group();
+
+  // zero line
+  if (showZeroLine) {
+    const zl = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-TOTAL_W / 2 - 0.5, 0, 0), new THREE.Vector3(TOTAL_W / 2 + 0.5, 0, 0)]),
+      new THREE.LineBasicMaterial({ color: 0x334455, transparent: true, opacity: 0.6 })
+    );
+    g.add(zl);
+  }
+
+  heights.forEach((h, i) => {
+    const bar = makeBar(h, colors[i], barX(i));
+    g.add(bar);
+    const lbl = makeTextSprite(labelTexts[i], colors[i], 19, 0.65);
+    lbl.scale.set(2.8, 0.38, 1);
+    lbl.position.set(barX(i), -1.5, 0);
+    g.add(lbl);
+  });
+
+  return g;
+}
+
+/* ================================================================
+   STAGE 1 — Raw logits
+   ================================================================ */
+
+const s1 = new THREE.Group();
+stageRoot.add(s1);
+
+// Scale logits for visual: logit range ~ -2.2 to 3.5, scale so max height ~3.5
+const LOGIT_SCALE = 3.5 / Math.max(...LOGITS.map(Math.abs));
+const s1Heights = LOGITS.map(v => v * LOGIT_SCALE);
+const s1Colors  = LOGITS.map(v => v >= 0 ? 0x42a5f5 : 0xef5350);
+const s1BarGroup = makeBarGroup(s1Heights, s1Colors, TOKENS.map((t, i) => `${t} ${LOGITS[i].toFixed(1)}`));
+s1.add(s1BarGroup);
+
+const s1Title = makeTextSprite('raw logits (unbounded)', 0x888888, 20, 0.5);
+s1Title.scale.set(5, 0.42, 1);
+s1Title.position.set(0, -3, 0);
+s1.add(s1Title);
+
+// Axis label
+const s1AxisLbl = makeTextSprite('logit value', 0x555577, 18, 0.5);
+s1AxisLbl.scale.set(3, 0.38, 1);
+s1AxisLbl.position.set(-TOTAL_W / 2 - 2.2, 0, 0);
+s1.add(s1AxisLbl);
+
+/* ================================================================
+   STAGE 2 — After exp()
+   ================================================================ */
+
+const s2 = new THREE.Group();
+stageRoot.add(s2);
+
+const EXP_MAX = Math.max(...EXP_VALS);
+const EXP_SCALE = 4.0 / EXP_MAX;
+const s2Heights = EXP_VALS.map(v => v * EXP_SCALE);
+const s2BarGroup = makeBarGroup(s2Heights, EXP_VALS.map(() => 0xab47bc), TOKENS.map((t, i) => `${t}`), false);
+s2.add(s2BarGroup);
+
+const s2Title = makeTextSprite('after exp(logit) — all positive, gaps wider', 0x888888, 20, 0.5);
+s2Title.scale.set(6.5, 0.42, 1);
+s2Title.position.set(0, -3, 0);
+s2.add(s2Title);
+
+// zero floor
+s2.add(new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-TOTAL_W / 2 - 0.5, 0, 0), new THREE.Vector3(TOTAL_W / 2 + 0.5, 0, 0)]),
+  new THREE.LineBasicMaterial({ color: 0x334455, transparent: true, opacity: 0.5 })
+));
+
+/* ================================================================
+   STAGE 3 — Normalizing (mid-transition bars)
+   ================================================================ */
+
+const s3 = new THREE.Group();
+stageRoot.add(s3);
+
+// Show bars at intermediate state — partially between exp and final probs
+const s3Heights = PROBS.map(v => v * 3.5); // prob-height, scaled to ~3.5 max
+const s3BarGroup = makeBarGroup(s3Heights, PROBS.map(() => 0xffb74d), TOKENS, false);
+s3.add(s3BarGroup);
+
+const s3Title = makeTextSprite('dividing by sum → values compress to [0,1]', 0x888888, 20, 0.5);
+s3Title.scale.set(6.5, 0.42, 1);
+s3Title.position.set(0, -3, 0);
+s3.add(s3Title);
+
+s3.add(new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-TOTAL_W / 2 - 0.5, 0, 0), new THREE.Vector3(TOTAL_W / 2 + 0.5, 0, 0)]),
+  new THREE.LineBasicMaterial({ color: 0x334455, transparent: true, opacity: 0.5 })
+));
+
+// "sum = 1.0" label
+const sumLbl = makeTextSprite('Σ = 1.000', 0xffb74d, 22, 0.7);
+sumLbl.scale.set(3.5, 0.45, 1);
+sumLbl.position.set(TOTAL_W / 2 + 3, 1, 0);
+s3.add(sumLbl);
+
+/* ================================================================
+   STAGE 4 — Final probability distribution
+   ================================================================ */
+
+const s4 = new THREE.Group();
+stageRoot.add(s4);
+
+const s4Colors = PROBS.map((_, i) => i === 0 ? 0x66bb6a : 0x42a5f5);
+const s4Heights = PROBS.map(v => v * 4.0);
+const s4BarGroup = makeBarGroup(s4Heights, s4Colors, TOKENS.map((t, i) => `${t} ${(PROBS[i]*100).toFixed(0)}%`), false);
+s4.add(s4BarGroup);
+
+// Glow on winning bar
+const winGlow = new THREE.Mesh(
+  new THREE.BoxGeometry(BAR_W + 0.3, s4Heights[0] + 0.3, BAR_DEPTH + 0.3),
+  new THREE.MeshBasicMaterial({ color: 0x66bb6a, transparent: true, opacity: 0.08 })
+);
+winGlow.position.set(barX(0), s4Heights[0] / 2, 0);
+s4.add(winGlow);
+
+const s4Title = makeTextSprite('softmax probability distribution', 0x888888, 20, 0.5);
+s4Title.scale.set(5.5, 0.42, 1);
+s4Title.position.set(0, -3, 0);
+s4.add(s4Title);
+
+s4.add(new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-TOTAL_W / 2 - 0.5, 0, 0), new THREE.Vector3(TOTAL_W / 2 + 0.5, 0, 0)]),
+  new THREE.LineBasicMaterial({ color: 0x334455, transparent: true, opacity: 0.5 })
+));
+
+/* ================================================================
+   STAGE 5 — Temperature comparison
+   ================================================================ */
+
+const s5 = new THREE.Group();
+stageRoot.add(s5);
+
+const rows = [
+  { label: 'T=0.5 (cold)', probs: PROBS_COLD, color: 0x42a5f5,  yOff: 4.2 },
+  { label: 'T=1.0 (default)', probs: PROBS, color: 0x66bb6a,   yOff: 0   },
+  { label: 'T=2.0 (hot)',  probs: PROBS_HOT,  color: 0xef5350,  yOff: -4.2 },
+];
+
+rows.forEach(({ label, probs, color, yOff }) => {
+  const maxH = 2.5;
+  const scl = maxH / Math.max(...probs);
+  probs.forEach((p, i) => {
+    const h = Math.max(p * scl, 0.04);
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.2, roughness: 0.4, metalness: 0.1 });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(BAR_W * 0.75, h, BAR_DEPTH * 0.75), mat);
+    mesh.position.set(barX(i), yOff + h / 2, 0);
+    s5.add(mesh);
+  });
+  const lbl = makeTextSprite(label, color, 20, 0.7);
+  lbl.scale.set(4, 0.42, 1);
+  lbl.position.set(-TOTAL_W / 2 - 3, yOff + 0.8, 0);
+  s5.add(lbl);
+  // zero line per row
+  s5.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-TOTAL_W / 2 - 0.5, yOff, 0), new THREE.Vector3(TOTAL_W / 2 + 0.5, yOff, 0)]),
+    new THREE.LineBasicMaterial({ color: 0x334455, transparent: true, opacity: 0.4 })
+  ));
+});
+
+const s5Title = makeTextSprite('temperature controls distribution sharpness', 0x888888, 20, 0.5);
+s5Title.scale.set(7, 0.42, 1);
+s5Title.position.set(0, -6.2, 0);
+s5.add(s5Title);
+
+/* ================================================================
+   STAGE CAMERA & VISIBILITY
+   ================================================================ */
+
+const STAGE_CFGS = [
+  { cam: [0, 1.5, 17], tgt: [0, 0.5, 0], rot: false },
+  { cam: [0, 2,   17], tgt: [0, 1,   0], rot: false },
+  { cam: [0, 1.5, 17], tgt: [0, 0.5, 0], rot: false },
+  { cam: [0, 1.5, 17], tgt: [0, 0.5, 0], rot: false },
+  { cam: [0, 1,   22], tgt: [0, 0,   0], rot: false },
+];
+const STAGE_GROUPS = [s1, s2, s3, s4, s5];
+function setVis(i) { STAGE_GROUPS.forEach((g, j) => { g.visible = i === j; }); }
+
+/* ================================================================
+   ANIMATION STATE — bars lerp between states
+   ================================================================ */
+
+// For stages 2→3 transition effect, we'll animate bar heights
+let s3BarMeshes = [];
+s3BarGroup.children.forEach(c => { if (c.isMesh) s3BarMeshes.push(c); });
+
+/* ================================================================
+   NAV
+   ================================================================ */
+
+let cur = 0, stageT0 = 0;
+const camTgt  = new THREE.Vector3(0, 1.5, 17);
+const ctrlTgt = new THREE.Vector3(0, 0.5, 0);
+
+const nc = document.getElementById('narrative-content');
+const pp = document.getElementById('progress');
+const bPrev = document.getElementById('btn-prev');
+const bNext = document.getElementById('btn-next');
+
+STAGES.forEach((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => go(i));
+  pp.appendChild(d);
+});
+
+function updateText(i) {
+  const s = STAGES[i];
+  nc.classList.add('fading');
+  setTimeout(() => {
+    nc.innerHTML = `<div class="stage-label">${s.label}</div><h2 class="stage-title">${s.title}</h2><div class="stage-body">${s.body}</div>`;
+    nc.classList.remove('fading');
+  }, 300);
+}
+
+function updateDots(i) {
+  pp.querySelectorAll('.dot').forEach((d, j) => {
+    d.classList.remove('active', 'visited');
+    if (j === i) d.classList.add('active');
+    else if (j < i) d.classList.add('visited');
+  });
+}
+
+function updateBtns(i) {
+  bPrev.disabled = i === 0;
+  bNext.innerHTML = i === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function go(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === cur) return;
+  cur = idx;
+  const c = STAGE_CFGS[idx];
+  camTgt.set(...c.cam);
+  ctrlTgt.set(...c.tgt);
+  setVis(idx);
+  updateText(idx);
+  updateDots(idx);
+  updateBtns(idx);
+  stageT0 = clock.getElapsedTime();
+}
+
+setVis(0); updateText(0); updateDots(0); updateBtns(0);
+
+bNext.addEventListener('click', () => go(cur + 1));
+bPrev.addEventListener('click', () => go(cur - 1));
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(cur + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); go(cur - 1); }
+});
+window.addEventListener('resize', () => {
+  camera3D.aspect = vizPanel.clientWidth / vizPanel.clientHeight;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+});
+
+/* ================================================================
+   RENDER LOOP
+   ================================================================ */
+
+const clock = new THREE.Clock();
+
+function pulseBars(barGroup, t, baseEmissive = 0.2) {
+  barGroup.children.forEach((c, i) => {
+    if (c.isMesh) {
+      c.material.emissiveIntensity = baseEmissive + Math.sin(t * 1.4 + i * 0.7) * 0.08;
+    }
+  });
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const st = t - stageT0;
+
+  camera3D.position.lerp(camTgt, 2.5 * dt * 0.7);
+  controls.target.lerp(ctrlTgt, 2.5 * dt * 0.7);
+  controls.autoRotate = STAGE_CFGS[cur].rot;
+  grid.rotation.y = t * 0.02;
+
+  /* --- Stage 1 --- */
+  if (cur === 0) {
+    pulseBars(s1BarGroup, t, 0.2);
+    // Bars gently wobble
+    s1BarGroup.children.forEach((c, i) => {
+      if (c.isMesh && c.geometry.type !== 'BufferGeometry') {
+        c.scale.z = 1 + Math.sin(t * 1.2 + i * 0.9) * 0.03;
+      }
+    });
+  }
+
+  /* --- Stage 2 --- */
+  if (cur === 1) {
+    pulseBars(s2BarGroup, t, 0.22);
+    // Bars slightly wiggle height to show instability of raw exp
+    s2BarGroup.children.forEach((c, i) => {
+      if (c.isMesh) {
+        const waver = 1 + Math.sin(t * 2.2 + i * 1.1) * 0.03;
+        c.scale.y = waver;
+        c.position.y = (c.userData.baseY || c.position.y) * waver;
+        if (!c.userData.baseY) c.userData.baseY = c.position.y;
+      }
+    });
+  }
+
+  /* --- Stage 3 --- */
+  if (cur === 2) {
+    pulseBars(s3BarGroup, t, 0.24);
+    winGlow && (winGlow.material.opacity = 0.05 + Math.sin(t * 2.5) * 0.04);
+  }
+
+  /* --- Stage 4 --- */
+  if (cur === 3) {
+    pulseBars(s4BarGroup, t, 0.22);
+    winGlow.material.opacity = 0.06 + Math.sin(t * 3) * 0.05;
+    winGlow.scale.setScalar(1 + Math.sin(t * 2.5) * 0.03);
+  }
+
+  /* --- Stage 5 --- */
+  if (cur === 4) {
+    // Rows gently float at different rates
+    s5.children.forEach((c, i) => {
+      if (c.isMesh) {
+        c.material.emissiveIntensity = 0.15 + Math.sin(t * 1.2 + i * 0.5) * 0.07;
+      }
+    });
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+</script>
+</body>
+</html>

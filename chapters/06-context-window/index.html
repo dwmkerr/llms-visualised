@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Context Window</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden; height: 100vh; width: 100vw; display: flex; background: #0a0a0f;
+  }
+
+  #narrative-panel {
+    width: 40%; min-width: 340px; height: 100vh; background: #fafafa;
+    display: flex; flex-direction: column; position: relative; z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 3rem 2.5rem; overflow-y: auto; transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  .stage-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #888; margin-bottom: 1rem; }
+  .stage-title { font-size: 1.9rem; font-weight: 700; color: #111; line-height: 1.25; margin-bottom: 1.2rem; }
+  .stage-body { font-size: 1.05rem; line-height: 1.7; color: #444; font-weight: 400; }
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .highlight { display: inline; padding: 0.1em 0.35em; border-radius: 4px; font-weight: 600; font-size: 0.95em; }
+  .hl-token  { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .hl-vector { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .hl-layer  { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .hl-predict{ background: rgba(102,187,106,0.2); color: #2e7d32; }
+  .hl-cycle  { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+  #nav-bar { display: flex; align-items: center; justify-content: space-between; padding: 1.2rem 2.5rem; border-top: 1px solid #e0e0e0; background: #fff; }
+
+  .nav-btn {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.65rem 1.5rem;
+    border: 2px solid #222; border-radius: 8px; background: #fff; color: #222;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;
+  }
+  .nav-btn:hover:not(:disabled) { background: #222; color: #fff; }
+  .nav-btn:disabled { opacity: 0.25; cursor: default; }
+  .nav-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+  #progress { display: flex; gap: 0.6rem; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; transition: all 0.35s; cursor: pointer; }
+  .dot.active  { background: #222; transform: scale(1.3); }
+  .dot.visited { background: #888; }
+
+  #viz-panel { flex: 1; position: relative; height: 100vh; }
+  #viz-panel canvas { display: block; }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ================================================================
+   STAGES
+   ================================================================ */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'A fixed-size window',
+    body: `<p>The <span class="highlight hl-vector">context window</span> is the maximum number of tokens the model can see at once — both input and output combined.</p>
+           <p>Think of it as a fixed-length strip of tape. Everything inside the window is visible to the model. Everything outside simply doesn't exist to it.</p>
+           <p>Early models had windows of 512–2048 tokens. Modern ones reach 128K or more. But the window is always finite.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Tokens fill the window',
+    body: `<p>As a conversation progresses, <span class="highlight hl-token">tokens accumulate</span> in the window — your messages, the model's replies, any system instructions.</p>
+           <p>Each token occupies one slot. A short paragraph is roughly 100 tokens. A page of text, about 700. A typical novel chapter, 3000–5000.</p>
+           <p>Watch the slots fill from left to right. Each colored sphere is a token: warm tones for user messages, cool tones for model responses.</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'The window is full',
+    body: `<p>When the context window reaches capacity, something must give. New tokens <span class="highlight hl-cycle">push old ones out</span> — the oldest tokens fall off the left edge.</p>
+           <p>The model loses access to those early tokens entirely. It cannot summarize or compress them — they simply vanish from its view.</p>
+           <p>Watch the leftmost token drop away as a new one arrives. The window slides forward through the conversation.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Why it matters',
+    body: `<p>Context limits have real consequences. In a long conversation, the model may <span class="highlight hl-cycle">forget</span> earlier instructions, user preferences, or established facts.</p>
+           <p>It may contradict itself, ignore earlier constraints, or lose track of what was decided three exchanges ago — not from confusion, but because those tokens are literally gone.</p>
+           <p>Applications must carefully manage context: summarizing, trimming, or using retrieval systems to compensate.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Longer windows, new tradeoffs',
+    body: `<p>Extending the context window is costly. Attention computation scales <span class="highlight hl-layer">quadratically</span> with sequence length — doubling the window roughly quadruples the compute.</p>
+           <p>Longer windows enable new use cases: processing entire codebases, books, or meeting transcripts in one pass. But every token in the window is attended to on every generation step.</p>
+           <p>The context window is both the model's short-term memory and its primary interface with the world — finite, precious, and always in flux.</p>`,
+  },
+];
+
+/* ================================================================
+   THREE.JS SETUP
+   ================================================================ */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.007);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 4, 18);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(10, 15, 10);
+scene.add(dir);
+const ptL = new THREE.PointLight(0x4466ff, 0.3, 50);
+ptL.position.set(-5, 5, 5);
+scene.add(ptL);
+
+const grid = new THREE.GridHelper(40, 40, 0x222233, 0x151520);
+grid.material.transparent = true;
+grid.material.opacity = 0.3;
+scene.add(grid);
+
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+
+function makeTextSprite(text, color, fontSize = 32, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512; canvas.height = 64;
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pw = ctx.measureText(text).width + 28, ph = 44;
+  const px = (canvas.width - pw) / 2, py = (canvas.height - ph) / 2;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, px, py, pw, ph, 8); ctx.fill();
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+function glowSphere(radius, color, emissive = 0.4) {
+  const m = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 32, 32),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: emissive, roughness: 0.25, metalness: 0.1 })
+  );
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 1.6, 32, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12 })
+  );
+  m.add(glow);
+  return m;
+}
+
+// Window slot colors by type
+const USER_COLORS   = [0xffb74d, 0xffa726, 0xff9800, 0xef6c00, 0xff7043, 0xef5350];
+const MODEL_COLORS  = [0x42a5f5, 0x1e88e5, 0x1565c0, 0x5c6bc0, 0x7e57c2, 0xab47bc];
+const SYSTEM_COLOR  = 0x66bb6a;
+
+const stageRoot = new THREE.Group();
+scene.add(stageRoot);
+
+/* ================================================================
+   SHARED: Window slot outlines
+   ================================================================ */
+
+const WINDOW_SIZE = 8;
+const SLOT_W = 1.6, SLOT_H = 1.6, SLOT_D = 0.4, SLOT_GAP = 0.25;
+const TOTAL_W = WINDOW_SIZE * (SLOT_W + SLOT_GAP) - SLOT_GAP;
+
+function makeWindowOutline(n, color = 0x334455, opacity = 0.4) {
+  const g = new THREE.Group();
+  for (let i = 0; i < n; i++) {
+    const x = -TOTAL_W / 2 + i * (SLOT_W + SLOT_GAP) + SLOT_W / 2;
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(SLOT_W, SLOT_H, SLOT_D)),
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+    );
+    edges.position.set(x, 0, 0);
+    g.add(edges);
+  }
+  return g;
+}
+
+function makeTokenSphere(color, x, label = null, parent) {
+  const s = glowSphere(0.42, color);
+  s.position.set(x, 0, 0);
+  parent.add(s);
+  if (label) {
+    const lbl = makeTextSprite(label, color, 18, 0.65);
+    lbl.scale.set(2.8, 0.38, 1);
+    lbl.position.set(x, -1.2, 0);
+    parent.add(lbl);
+  }
+  return s;
+}
+
+function slotX(i) {
+  return -TOTAL_W / 2 + i * (SLOT_W + SLOT_GAP) + SLOT_W / 2;
+}
+
+/* ================================================================
+   STAGE 1 — Empty window
+   ================================================================ */
+
+const s1 = new THREE.Group();
+stageRoot.add(s1);
+
+s1.add(makeWindowOutline(WINDOW_SIZE, 0x4466aa, 0.5));
+
+// Window boundary brackets
+const bracketMat = new THREE.LineBasicMaterial({ color: 0x4488cc, transparent: true, opacity: 0.7 });
+[[- TOTAL_W / 2 - 0.3, 1], [TOTAL_W / 2 + 0.3, -1]].forEach(([bx, dir]) => {
+  const pts = [
+    new THREE.Vector3(bx + dir * 0.4, -SLOT_H / 2 - 0.2, 0),
+    new THREE.Vector3(bx, -SLOT_H / 2 - 0.2, 0),
+    new THREE.Vector3(bx, SLOT_H / 2 + 0.2, 0),
+    new THREE.Vector3(bx + dir * 0.4, SLOT_H / 2 + 0.2, 0),
+  ];
+  s1.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), bracketMat));
+});
+
+const s1CapLbl = makeTextSprite('context window  (8 slots)', 0x4488cc, 22, 0.6);
+s1CapLbl.scale.set(5.5, 0.45, 1);
+s1CapLbl.position.set(0, 2.2, 0);
+s1.add(s1CapLbl);
+
+const s1EmptyLbl = makeTextSprite('empty — waiting for tokens', 0x555566, 20, 0.5);
+s1EmptyLbl.scale.set(5, 0.42, 1);
+s1EmptyLbl.position.set(0, -2.2, 0);
+s1.add(s1EmptyLbl);
+
+/* ================================================================
+   STAGE 2 — Tokens filling
+   ================================================================ */
+
+const s2 = new THREE.Group();
+stageRoot.add(s2);
+s2.add(makeWindowOutline(WINDOW_SIZE, 0x4466aa, 0.4));
+
+const s2Tokens = [
+  { color: SYSTEM_COLOR,    label: '[sys]'  },
+  { color: USER_COLORS[0],  label: 'Hello'  },
+  { color: USER_COLORS[1],  label: 'I'      },
+  { color: USER_COLORS[2],  label: 'need'   },
+  { color: MODEL_COLORS[0], label: 'Sure'   },
+];
+const s2Spheres = [], s2FadeTargets = [];
+s2Tokens.forEach(({ color, label }, i) => {
+  const s = makeTokenSphere(color, slotX(i), label, s2);
+  s.userData.targetScale = 1;
+  s2Spheres.push(s);
+  s2FadeTargets.push(i);
+});
+
+const s2UsedLbl = makeTextSprite('5 of 8 slots used', 0x88aacc, 21, 0.6);
+s2UsedLbl.scale.set(4.5, 0.42, 1);
+s2UsedLbl.position.set(0, 2.5, 0);
+s2.add(s2UsedLbl);
+
+/* ================================================================
+   STAGE 3 — Window full + overflow
+   ================================================================ */
+
+const s3 = new THREE.Group();
+stageRoot.add(s3);
+s3.add(makeWindowOutline(WINDOW_SIZE, 0x4466aa, 0.4));
+
+const ALL_COLORS = [SYSTEM_COLOR, ...USER_COLORS.slice(0,3), ...MODEL_COLORS.slice(0,3), USER_COLORS[4]];
+const s3Spheres = [];
+ALL_COLORS.forEach((color, i) => {
+  const s = glowSphere(0.42, color);
+  s.position.set(slotX(i), 0, 0);
+  s3.add(s); s3Spheres.push(s);
+});
+
+// Incoming "new" token (will push first one off)
+const incomingSphere = glowSphere(0.42, USER_COLORS[5], 0.7);
+incomingSphere.position.set(slotX(WINDOW_SIZE) + 1.5, 0, 0);
+s3.add(incomingSphere);
+const incomingLbl = makeTextSprite('new token', 0xffccaa, 19, 0.7);
+incomingLbl.scale.set(3.2, 0.4, 1);
+incomingLbl.position.set(slotX(WINDOW_SIZE) + 1.5, -1.3, 0);
+s3.add(incomingLbl);
+
+// Arrow from incoming
+const arrPts = [new THREE.Vector3(slotX(WINDOW_SIZE) + 0.8, 0, 0), new THREE.Vector3(slotX(WINDOW_SIZE - 1) + 0.8, 0, 0)];
+s3.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(arrPts), new THREE.LineBasicMaterial({ color: 0xffccaa, transparent: true, opacity: 0.6 })));
+
+// Falling token group
+const fallingToken = glowSphere(0.42, SYSTEM_COLOR, 0.25);
+fallingToken.position.set(slotX(0) - 2, 0, 0);
+s3.add(fallingToken);
+const fallingLbl = makeTextSprite('forgotten', 0xaa5544, 18, 0.7);
+fallingLbl.scale.set(3.2, 0.4, 1);
+fallingLbl.position.set(slotX(0) - 2, -1.3, 0);
+s3.add(fallingLbl);
+
+const s3FullLbl = makeTextSprite('window full — oldest token drops', 0xee7755, 21, 0.6);
+s3FullLbl.scale.set(5.5, 0.45, 1);
+s3FullLbl.position.set(0, 2.6, 0);
+s3.add(s3FullLbl);
+
+/* ================================================================
+   STAGE 4 — Why it matters
+   ================================================================ */
+
+const s4 = new THREE.Group();
+stageRoot.add(s4);
+
+// Show a window with some tokens greyed out (representing forgotten)
+const s4WindowFrameActive = makeWindowOutline(WINDOW_SIZE, 0x4466aa, 0.4);
+s4.add(s4WindowFrameActive);
+
+const s4Spheres = [];
+const s4ActiveStart = 3;
+ALL_COLORS.forEach((color, i) => {
+  const active = i >= s4ActiveStart;
+  const col = active ? color : 0x222233;
+  const s = glowSphere(0.42, col, active ? 0.35 : 0.08);
+  s.position.set(slotX(i), 0, 0);
+  s.material = s.children[0].parent.material; // keep ref
+  if (!active) {
+    s.children[0].material.opacity = 0.04;
+  }
+  s4.add(s); s4Spheres.push(s);
+});
+
+// "Lost" label on left side
+const forgottenLabel = makeTextSprite('FORGOTTEN', 0x664444, 19, 0.6);
+forgottenLabel.scale.set(3.5, 0.42, 1);
+forgottenLabel.position.set(slotX(1), 1.5, 0);
+s4.add(forgottenLabel);
+
+const rememberLabel = makeTextSprite('visible to model →', 0x88aacc, 19, 0.6);
+rememberLabel.scale.set(4.2, 0.42, 1);
+rememberLabel.position.set(slotX(5), 1.5, 0);
+s4.add(rememberLabel);
+
+// Dividing line
+const divLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(slotX(s4ActiveStart) - SLOT_W / 2 - SLOT_GAP / 2, -1.2, 0), new THREE.Vector3(slotX(s4ActiveStart) - SLOT_W / 2 - SLOT_GAP / 2, 1.2, 0)]),
+  new THREE.LineBasicMaterial({ color: 0xee4433, transparent: true, opacity: 0.7 })
+);
+s4.add(divLine);
+
+/* ================================================================
+   STAGE 5 — Quadratic cost
+   ================================================================ */
+
+const s5 = new THREE.Group();
+stageRoot.add(s5);
+
+// Three windows of different sizes
+const sizes = [4, 8, 12];
+const labels5 = ['4K tokens', '8K tokens', '16K tokens'];
+const costs   = ['1×', '4×', '9×'];
+
+sizes.forEach((sz, row) => {
+  const yOff = (1 - row) * 3.5;
+  const sW = sz * (SLOT_W * 0.6 + 0.15) - 0.15;
+  for (let i = 0; i < sz; i++) {
+    const x = -sW / 2 + i * (SLOT_W * 0.6 + 0.15) + SLOT_W * 0.3;
+    const col = MODEL_COLORS[i % MODEL_COLORS.length];
+    const sp = glowSphere(0.28, col, 0.35);
+    sp.position.set(x - 2.5, yOff, 0);
+    s5.add(sp);
+  }
+  const szLbl = makeTextSprite(labels5[row], 0x88aacc, 20, 0.6);
+  szLbl.scale.set(3.8, 0.42, 1);
+  szLbl.position.set(-2.5 - sW / 2 - 2.5, yOff, 0);
+  s5.add(szLbl);
+
+  const costLbl = makeTextSprite(`cost: ${costs[row]}`, row === 2 ? 0xef5350 : 0x88bb88, 20, 0.7);
+  costLbl.scale.set(3.2, 0.42, 1);
+  costLbl.position.set(-2.5 + sW / 2 + 2.5, yOff, 0);
+  s5.add(costLbl);
+});
+
+const s5Title = makeTextSprite('attention cost grows quadratically', 0x888888, 20, 0.5);
+s5Title.scale.set(6, 0.45, 1);
+s5Title.position.set(-2.5, -4, 0);
+s5.add(s5Title);
+
+/* ================================================================
+   STAGE CAMERA & VISIBILITY
+   ================================================================ */
+
+const STAGE_CFGS = [
+  { cam: [0, 2, 14],  tgt: [0, 0, 0],   rot: false },
+  { cam: [0, 2, 15],  tgt: [0, 0, 0],   rot: false },
+  { cam: [0, 2, 16],  tgt: [0, 0, 0],   rot: false },
+  { cam: [0, 2, 15],  tgt: [0, 0, 0],   rot: false },
+  { cam: [-2.5, 3, 20], tgt: [-2.5, 0, 0], rot: false },
+];
+const STAGE_GROUPS = [s1, s2, s3, s4, s5];
+function setVis(i) { STAGE_GROUPS.forEach((g, j) => { g.visible = i === j; }); }
+
+/* ================================================================
+   NAV
+   ================================================================ */
+
+let cur = 0, stageT0 = 0;
+const camTgt = new THREE.Vector3(0, 2, 14);
+const ctrlTgt = new THREE.Vector3(0, 0, 0);
+
+const nc = document.getElementById('narrative-content');
+const pp = document.getElementById('progress');
+const bPrev = document.getElementById('btn-prev');
+const bNext = document.getElementById('btn-next');
+
+STAGES.forEach((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => go(i));
+  pp.appendChild(d);
+});
+
+function updateText(i) {
+  const s = STAGES[i];
+  nc.classList.add('fading');
+  setTimeout(() => {
+    nc.innerHTML = `<div class="stage-label">${s.label}</div><h2 class="stage-title">${s.title}</h2><div class="stage-body">${s.body}</div>`;
+    nc.classList.remove('fading');
+  }, 300);
+}
+
+function updateDots(i) {
+  pp.querySelectorAll('.dot').forEach((d, j) => {
+    d.classList.remove('active', 'visited');
+    if (j === i) d.classList.add('active');
+    else if (j < i) d.classList.add('visited');
+  });
+}
+
+function updateBtns(i) {
+  bPrev.disabled = i === 0;
+  bNext.innerHTML = i === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function go(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === cur) return;
+  cur = idx;
+  const c = STAGE_CFGS[idx];
+  camTgt.set(...c.cam);
+  ctrlTgt.set(...c.tgt);
+  setVis(idx);
+  updateText(idx);
+  updateDots(idx);
+  updateBtns(idx);
+  stageT0 = clock.getElapsedTime();
+}
+
+setVis(0); updateText(0); updateDots(0); updateBtns(0);
+
+bNext.addEventListener('click', () => go(cur + 1));
+bPrev.addEventListener('click', () => go(cur - 1));
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(cur + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); go(cur - 1); }
+});
+window.addEventListener('resize', () => {
+  camera3D.aspect = vizPanel.clientWidth / vizPanel.clientHeight;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+});
+
+/* ================================================================
+   RENDER LOOP
+   ================================================================ */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const st = t - stageT0;
+
+  camera3D.position.lerp(camTgt, 2.5 * dt * 0.7);
+  controls.target.lerp(ctrlTgt, 2.5 * dt * 0.7);
+  controls.autoRotate = STAGE_CFGS[cur].rot;
+  grid.rotation.y = t * 0.02;
+
+  /* --- Stage 1 --- */
+  if (cur === 0) {
+    // Slot outlines gently pulse
+    s1.children.forEach((c, i) => {
+      if (c.isLineSegments) {
+        c.material.opacity = 0.3 + Math.sin(t * 1.2 + i * 0.3) * 0.1;
+      }
+    });
+  }
+
+  /* --- Stage 2 --- */
+  if (cur === 1) {
+    s2Spheres.forEach((s, i) => {
+      const fi = Math.min(Math.max(st - i * 0.5, 0) / 0.6, 1);
+      s.scale.setScalar(fi);
+      s.children[0].material.opacity = 0.06 + Math.sin(t * 1.8 + i) * 0.04;
+      s.position.y = Math.sin(t * 0.8 + i * 1.4) * 0.12;
+    });
+  }
+
+  /* --- Stage 3 --- */
+  if (cur === 2) {
+    // Incoming token pulses
+    incomingSphere.scale.setScalar(0.88 + Math.sin(t * 3) * 0.12);
+    incomingSphere.material.emissiveIntensity = 0.5 + Math.sin(t * 3) * 0.25;
+
+    // Falling token animates downward and leftward, fading
+    const fallSpeed = 0.4;
+    fallingToken.position.y = Math.sin(t * fallSpeed + 1.5) * 0.8 - 0.5;
+    fallingToken.position.x = slotX(0) - 2 - ((t * 0.3) % 2.5);
+    fallingToken.material.opacity = Math.max(0.05, 0.6 - (t * 0.15 % 0.6));
+
+    // Active tokens gently float
+    s3Spheres.forEach((s, i) => {
+      s.position.y = Math.sin(t * 0.75 + i * 1.3) * 0.1;
+    });
+  }
+
+  /* --- Stage 4 --- */
+  if (cur === 3) {
+    s4Spheres.forEach((s, i) => {
+      if (i >= s4ActiveStart) {
+        s.position.y = Math.sin(t * 0.7 + i * 1.2) * 0.1;
+        s.children[0].material.opacity = 0.07 + Math.sin(t * 1.6 + i) * 0.04;
+      }
+    });
+    // Dividing line pulses
+    divLine.material.opacity = 0.5 + Math.sin(t * 2.5) * 0.25;
+  }
+
+  /* --- Stage 5 --- */
+  if (cur === 4) {
+    // Spheres gently pulse in each row
+    s5.children.forEach((c, i) => {
+      if (c.isMesh && c.children[0]) {
+        c.children[0].material.opacity = 0.06 + Math.sin(t * 1.4 + i * 0.7) * 0.05;
+      }
+    });
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+</script>
+</body>
+</html>

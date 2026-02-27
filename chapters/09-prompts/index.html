@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt Engineering — LLMs Visualised</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  background: #0a0a0f;
+}
+
+#narrative-panel {
+  width: 40%;
+  min-width: 340px;
+  height: 100vh;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 10;
+  box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+}
+
+#narrative-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem 2.5rem;
+  overflow-y: auto;
+  transition: opacity 0.35s ease;
+}
+
+#narrative-content.fading { opacity: 0; }
+
+.stage-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 1rem;
+}
+
+.stage-title {
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #111;
+  line-height: 1.25;
+  margin-bottom: 1.2rem;
+}
+
+.stage-body {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #444;
+  font-weight: 400;
+}
+
+.stage-body p { margin-bottom: 0.9rem; }
+
+.highlight {
+  display: inline;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.hl-token  { background: rgba(255,183,77,0.2);  color: #e68a00; }
+.hl-vector { background: rgba(66,165,245,0.2);  color: #1565c0; }
+.hl-layer  { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+.hl-predict{ background: rgba(102,187,106,0.2); color: #2e7d32; }
+.hl-cycle  { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+#nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.2rem 2.5rem;
+  border-top: 1px solid #e0e0e0;
+  background: #fff;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.5rem;
+  border: 2px solid #222;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.nav-btn:hover:not(:disabled) { background: #222; color: #fff; }
+.nav-btn:disabled { opacity: 0.25; cursor: default; }
+.nav-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+#progress { display: flex; gap: 0.6rem; align-items: center; }
+
+.dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #ccc;
+  transition: all 0.35s;
+  cursor: pointer;
+}
+.dot.active  { background: #222; transform: scale(1.3); }
+.dot.visited { background: #888; }
+
+#viz-panel { flex: 1; position: relative; height: 100vh; }
+#viz-panel canvas { display: block; }
+
+@media (max-width: 800px) {
+  body { flex-direction: column; }
+  #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+  #viz-panel { height: 55vh; }
+  #narrative-content { padding: 1.5rem; }
+  .stage-title { font-size: 1.4rem; }
+}
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ================================================================
+   STAGES
+   ================================================================ */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'Your words steer the model',
+    body: `<p>Every interaction with an LLM starts with a <span class="highlight hl-token">prompt</span> — the text you provide. But prompts do more than give instructions: they're navigational coordinates in the model's vast meaning-space.</p>
+           <p>The model converts your words into vectors, then uses those vectors to locate a region of its learned distribution — a region where plausible completions live.</p>
+           <p>How you phrase your prompt determines <em>where</em> the model looks. Different words navigate to different regions, producing different responses.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Vague prompts: a wide cone of possibility',
+    body: `<p>Ask <strong>"write a story"</strong> and the model sees an enormous space of valid responses. Mystery, romance, sci-fi, one paragraph or a thousand — all are plausible completions.</p>
+           <p>A <span class="highlight hl-predict">vague prompt</span> leaves the model with a broad probability distribution. Many different outputs score similarly, so results can feel random or generic.</p>
+           <p>Notice the possibility cone fanning out in all directions — the model has no strong signal to narrow its focus.</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Specific prompts: the cone narrows',
+    body: `<p>Now ask: <strong>"Write a 3-sentence mystery set in 1920s Shanghai, from the detective's point of view."</strong> The space of valid responses collapses dramatically.</p>
+           <p>Each constraint — genre, length, setting, perspective — eliminates vast swaths of the possibility space. The model's attention is focused into a <span class="highlight hl-vector">narrow cone</span> of highly relevant outputs.</p>
+           <p>Specificity is leverage. More constraints mean more predictable, more useful results.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'System prompts set the frame',
+    body: `<p>A <span class="highlight hl-layer">system prompt</span> runs before the conversation begins, establishing persistent context. It places a boundary around the entire space the model can navigate.</p>
+           <p><em>"You are a coding assistant. Respond only in code, no explanations."</em> — this doesn't just steer one response; it constrains the model's output space for every subsequent turn.</p>
+           <p>The model still generates freely — but only within the defined region. System prompts are architectural constraints, not conversational hints.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Few-shot examples anchor the path',
+    body: `<p>Show the model a few examples of what you want and it learns the pattern implicitly — no training required, just examples in the prompt. This is called <span class="highlight hl-cycle">few-shot prompting</span>.</p>
+           <p>Each example acts as an anchor in meaning-space. The model sees the pattern and extrapolates: the next output should live near these examples.</p>
+           <p>Combined with a clear task description, few-shot examples are among the most powerful techniques for reliably steering LLM behaviour.</p>`,
+  },
+];
+
+/* ================================================================
+   THREE.JS SETUP
+   ================================================================ */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.007);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 2, 18);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.5;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+scene.add(Object.assign(new THREE.PointLight(0x7766ff, 0.3, 60), { position: new THREE.Vector3(-5, 8, 5) }));
+
+const gridHelper = new THREE.GridHelper(40, 40, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color, fontSize = 32, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512; canvas.height = 64;
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pw = ctx.measureText(text).width + 28, ph = 44;
+  const px = (512 - pw) / 2, py = (64 - ph) / 2;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, px, py, pw, ph, 8); ctx.fill();
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${~~(c.r*255)},${~~(c.g*255)},${~~(c.b*255)})`;
+  ctx.fillText(text, 256, 33);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function makeSphere(radius, color, emissiveIntensity = 0.4, glowScale = 1.7) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 32, 32),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity, roughness: 0.25, metalness: 0.1 })
+  );
+  mesh.add(new THREE.Mesh(
+    new THREE.SphereGeometry(radius * glowScale, 32, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.1 })
+  ));
+  return mesh;
+}
+
+function makeLine(from, to, color, opacity = 0.4) {
+  const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+  return new THREE.Line(geo, mat);
+}
+
+/* ================================================================
+   SCENE OBJECTS
+   ================================================================ */
+
+const stageGroup = new THREE.Group();
+scene.add(stageGroup);
+
+// ---- Stage 1: The Prompt ----
+const s1Group = new THREE.Group();
+stageGroup.add(s1Group);
+
+const s1Center = makeSphere(0.7, 0xab47bc, 0.5, 1.9);
+s1Group.add(s1Center);
+
+const s1Prompt = makeTextSprite('"Write me a story"', 0xffb74d, 30, 0.85);
+s1Prompt.scale.set(6.5, 0.78, 1);
+s1Prompt.position.set(0, 3.8, 0);
+s1Group.add(s1Prompt);
+
+// Arrow prompt → center
+s1Group.add(makeLine(new THREE.Vector3(0, 3.0, 0), new THREE.Vector3(0, 1.3, 0), 0x888888, 0.5));
+const s1ArrowHead = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.35, 8),
+  new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.5 }));
+s1ArrowHead.position.set(0, 1.0, 0);
+s1ArrowHead.rotation.x = Math.PI;
+s1Group.add(s1ArrowHead);
+
+// Radiating possibility rays
+const s1Rays = [];
+const s1RayTips = [];
+const s1RayCount = 12;
+for (let i = 0; i < s1RayCount; i++) {
+  const theta = (i / s1RayCount) * Math.PI * 2;
+  const phi = (Math.random() * 0.5 + 0.1) * Math.PI;
+  const dir = new THREE.Vector3(Math.cos(theta) * Math.sin(phi), Math.cos(phi), Math.sin(theta) * Math.sin(phi));
+  const len = 4 + Math.random() * 3;
+  const end = dir.multiplyScalar(len);
+  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), end]);
+  const mat = new THREE.LineBasicMaterial({ color: 0xab47bc, transparent: true, opacity: 0 });
+  const line = new THREE.Line(geo, mat);
+  s1Group.add(line);
+  s1Rays.push(mat);
+  const tip = makeSphere(0.14, 0xab47bc, 0.3, 1.5);
+  tip.position.copy(end);
+  s1Group.add(tip);
+  s1RayTips.push(tip);
+}
+
+// ---- Stage 2: Vague prompt — wide spread ----
+const s2Group = new THREE.Group();
+stageGroup.add(s2Group);
+
+const s2Center = makeSphere(0.7, 0xab47bc, 0.5, 1.9);
+s2Group.add(s2Center);
+
+const s2Prompt = makeTextSprite('"Write a story"', 0x999999, 28, 0.7);
+s2Prompt.scale.set(5.5, 0.68, 1);
+s2Prompt.position.set(0, 2.8, 0);
+s2Group.add(s2Prompt);
+
+// Wide possibility cloud
+const WIDE_COLORS = [0xffb74d, 0xef5350, 0x42a5f5, 0xab47bc, 0x66bb6a, 0xff8a65, 0x78909c, 0x26c6da, 0x8d6e63, 0xdce775];
+const s2Spheres = [];
+for (let i = 0; i < 20; i++) {
+  const theta = (i / 20) * Math.PI * 2 + Math.random() * 0.3;
+  const phi = Math.PI * (0.15 + Math.random() * 0.7);
+  const r = 5.5 + Math.random() * 4;
+  const pos = new THREE.Vector3(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi) + 0.5, r * Math.sin(phi) * Math.sin(theta));
+  const color = WIDE_COLORS[i % WIDE_COLORS.length];
+  const sp = makeSphere(0.2 + Math.random() * 0.15, color, 0.25, 1.4);
+  sp.position.copy(pos);
+  s2Group.add(sp);
+  s2Group.add(makeLine(new THREE.Vector3(0,0,0), pos, color, 0.1));
+  s2Spheres.push({ mesh: sp, base: pos.clone() });
+}
+
+// Wide cone wireframe
+const wideCone = new THREE.Mesh(new THREE.ConeGeometry(8.5, 6, 20, 1, true),
+  new THREE.MeshBasicMaterial({ color: 0xab47bc, wireframe: true, transparent: true, opacity: 0.05 }));
+wideCone.position.y = 3.5;
+wideCone.rotation.x = Math.PI;
+s2Group.add(wideCone);
+
+const s2ManyLabel = makeTextSprite('many possible outputs', 0x777777, 22, 0.55);
+s2ManyLabel.scale.set(4.5, 0.5, 1);
+s2ManyLabel.position.set(0, -1.8, 0);
+s2Group.add(s2ManyLabel);
+
+// ---- Stage 3: Specific prompt — narrow cone ----
+const s3Group = new THREE.Group();
+stageGroup.add(s3Group);
+
+const s3Center = makeSphere(0.7, 0xab47bc, 0.5, 1.9);
+s3Group.add(s3Center);
+
+const s3Prompt = makeTextSprite('"3-sentence mystery, 1920s Shanghai"', 0xffb74d, 21, 0.85);
+s3Prompt.scale.set(7.5, 0.62, 1);
+s3Prompt.position.set(0, 2.8, 0);
+s3Group.add(s3Prompt);
+
+// Tight cluster in one direction
+const s3Dir = new THREE.Vector3(1.2, 0.4, 0.3).normalize();
+const s3Spheres = [];
+for (let i = 0; i < 6; i++) {
+  const jitter = new THREE.Vector3((Math.random()-0.5)*0.6, (Math.random()-0.5)*0.6, (Math.random()-0.5)*0.6);
+  const r = 4 + Math.random() * 2;
+  const pos = s3Dir.clone().multiplyScalar(r).add(jitter);
+  const sp = makeSphere(0.27 + Math.random() * 0.1, 0x42a5f5, 0.5, 1.6);
+  sp.position.copy(pos);
+  s3Group.add(sp);
+  s3Group.add(makeLine(new THREE.Vector3(0,0,0), pos, 0x42a5f5, 0.3));
+  s3Spheres.push({ mesh: sp, base: pos.clone() });
+}
+
+// Narrow cone
+const narrowCone = new THREE.Mesh(new THREE.ConeGeometry(1.8, 5, 16, 1, true),
+  new THREE.MeshBasicMaterial({ color: 0x42a5f5, wireframe: true, transparent: true, opacity: 0.12 }));
+narrowCone.position.copy(s3Dir.clone().multiplyScalar(2.5));
+narrowCone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), s3Dir);
+s3Group.add(narrowCone);
+
+const s3NarrowLabel = makeTextSprite('focused output region', 0x42a5f5, 22, 0.55);
+s3NarrowLabel.scale.set(4.5, 0.5, 1);
+s3NarrowLabel.position.copy(s3Dir.clone().multiplyScalar(7));
+s3Group.add(s3NarrowLabel);
+
+// ---- Stage 4: System prompt — bounding frame ----
+const s4Group = new THREE.Group();
+stageGroup.add(s4Group);
+
+const s4Model = makeSphere(0.65, 0xab47bc, 0.5, 1.9);
+s4Group.add(s4Model);
+
+const boxGeo = new THREE.BoxGeometry(12, 8, 12);
+s4Group.add(new THREE.Mesh(boxGeo,
+  new THREE.MeshBasicMaterial({ color: 0xef5350, wireframe: true, transparent: true, opacity: 0.07 })));
+const s4Edges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(boxGeo),
+  new THREE.LineBasicMaterial({ color: 0xef5350, transparent: true, opacity: 0.35 })
+);
+s4Group.add(s4Edges);
+
+const s4SysLabel = makeTextSprite('System Prompt Boundary', 0xef5350, 24, 0.7);
+s4SysLabel.scale.set(5.5, 0.62, 1);
+s4SysLabel.position.set(0, 4.8, 0);
+s4Group.add(s4SysLabel);
+
+const s4InstrLabel = makeTextSprite('"You are a coding assistant"', 0x888888, 20, 0.6);
+s4InstrLabel.scale.set(5.5, 0.55, 1);
+s4InstrLabel.position.set(0, -5.0, 0);
+s4Group.add(s4InstrLabel);
+
+const s4InnerSpheres = [];
+for (let i = 0; i < 10; i++) {
+  const pos = new THREE.Vector3((Math.random()-0.5)*9, (Math.random()-0.5)*5.5, (Math.random()-0.5)*9);
+  const sp = makeSphere(0.18, 0x66bb6a, 0.3, 1.4);
+  sp.position.copy(pos);
+  s4Group.add(sp);
+  s4InnerSpheres.push({ mesh: sp, base: pos.clone() });
+}
+
+// ---- Stage 5: Few-shot examples ----
+const s5Group = new THREE.Group();
+stageGroup.add(s5Group);
+
+const examples = [
+  { ip: new THREE.Vector3(-5.5, 2.5, -2), op: new THREE.Vector3(-2.5, 3.0, -1.5), il: 'input 1', ol: 'output 1' },
+  { ip: new THREE.Vector3(-5.0, 0, 1),    op: new THREE.Vector3(-2.0, 0.5, 0.5),  il: 'input 2', ol: 'output 2' },
+  { ip: new THREE.Vector3(-5.5, -2.5, -0.5), op: new THREE.Vector3(-2.5, -2.0, -0.5), il: 'input 3', ol: 'output 3' },
+];
+
+const s5ExGroups = [];
+examples.forEach((ex, i) => {
+  const inSp = makeSphere(0.35, 0xffb74d, 0.4, 1.5);
+  inSp.position.copy(ex.ip);
+  s5Group.add(inSp);
+  const inLbl = makeTextSprite(ex.il, 0xffb74d, 20, 0.55);
+  inLbl.scale.set(2.5, 0.38, 1);
+  inLbl.position.set(ex.ip.x, ex.ip.y + 0.85, ex.ip.z);
+  s5Group.add(inLbl);
+
+  const outSp = makeSphere(0.35, 0x66bb6a, 0.4, 1.5);
+  outSp.position.copy(ex.op);
+  s5Group.add(outSp);
+  const outLbl = makeTextSprite(ex.ol, 0x66bb6a, 20, 0.55);
+  outLbl.scale.set(2.5, 0.38, 1);
+  outLbl.position.set(ex.op.x, ex.op.y + 0.85, ex.op.z);
+  s5Group.add(outLbl);
+
+  const arrow = makeLine(ex.ip, ex.op, 0x888888, 0.35);
+  s5Group.add(arrow);
+  s5ExGroups.push({ inSp, outSp, inLbl, outLbl, arrow });
+});
+
+// New query + predicted output
+const s5NewQ = makeSphere(0.42, 0xffb74d, 0.6, 1.9);
+s5NewQ.position.set(-5.2, 0.2, 2.8);
+s5Group.add(s5NewQ);
+const s5NewQLbl = makeTextSprite('new query', 0xffb74d, 22, 0.72);
+s5NewQLbl.scale.set(3, 0.48, 1);
+s5NewQLbl.position.set(-5.2, 1.25, 2.8);
+s5Group.add(s5NewQLbl);
+
+const s5Pred = makeSphere(0.5, 0x66bb6a, 0.65, 1.9);
+s5Pred.position.set(-2.0, 0.7, 2.2);
+s5Group.add(s5Pred);
+const s5PredLbl = makeTextSprite('predicted output', 0x66bb6a, 22, 0.72);
+s5PredLbl.scale.set(3.5, 0.48, 1);
+s5PredLbl.position.set(-2.0, 1.9, 2.2);
+s5Group.add(s5PredLbl);
+
+const s5DashLine = (() => {
+  const geo = new THREE.BufferGeometry().setFromPoints([s5NewQ.position.clone(), s5Pred.position.clone()]);
+  const mat = new THREE.LineDashedMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, dashSize: 0.3, gapSize: 0.2 });
+  const line = new THREE.Line(geo, mat);
+  line.computeLineDistances();
+  return line;
+})();
+s5Group.add(s5DashLine);
+
+const s5PatternLbl = makeTextSprite('pattern inferred from examples', 0x777777, 20, 0.5);
+s5PatternLbl.scale.set(5, 0.48, 1);
+s5PatternLbl.position.set(-4, -3.5, 0);
+s5Group.add(s5PatternLbl);
+
+/* ================================================================
+   STAGE CONFIG + VISIBILITY
+   ================================================================ */
+
+const stageConfigs = [
+  { camera: { x: 0, y: 2, z: 16 },  target: { x: 0, y: 1, z: 0 },   autoRotate: false },
+  { camera: { x: 6, y: 8, z: 18 },  target: { x: 0, y: 1, z: 0 },   autoRotate: true  },
+  { camera: { x: 7, y: 4, z: 11 },  target: { x: 2, y: 1, z: 0 },   autoRotate: true  },
+  { camera: { x: 9, y: 5, z: 16 },  target: { x: 0, y: 0, z: 0 },   autoRotate: true  },
+  { camera: { x: 2, y: 5, z: 13 },  target: { x: -2, y: 0.5, z: 0 },autoRotate: true  },
+];
+
+const stageGroups = [s1Group, s2Group, s3Group, s4Group, s5Group];
+
+function setStageVisibility(idx) {
+  stageGroups.forEach((g, i) => { g.visible = i === idx; });
+}
+
+/* ================================================================
+   STAGE MANAGEMENT + NAV
+   ================================================================ */
+
+let currentStage = 0;
+let stageStartTime = 0;
+const cameraTarget  = new THREE.Vector3(0, 2, 16);
+const controlsTarget = new THREE.Vector3(0, 1, 0);
+
+const narrativeContent   = document.getElementById('narrative-content');
+const btnPrev            = document.getElementById('btn-prev');
+const btnNext            = document.getElementById('btn-next');
+const progressContainer  = document.getElementById('progress');
+
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(idx) {
+  const s = STAGES[idx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>`;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(idx) {
+  progressContainer.querySelectorAll('.dot').forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === idx) d.classList.add('active');
+    else if (i < idx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(idx) {
+  btnPrev.disabled = idx === 0;
+  btnNext.disabled = idx === STAGES.length - 1;
+  btnNext.innerHTML = idx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  const cfg = stageConfigs[idx];
+  cameraTarget.set(cfg.camera.x, cfg.camera.y, cfg.camera.z);
+  controlsTarget.set(cfg.target.x, cfg.target.y, cfg.target.z);
+  setStageVisibility(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+  stageStartTime = clock.getElapsedTime();
+}
+
+setStageVisibility(0); updateNarrative(0); updateProgress(0); updateButtons(0);
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goToStage(currentStage + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); goToStage(currentStage - 1); }
+});
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth, h = vizPanel.clientHeight;
+  camera3D.aspect = w / h;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ================================================================
+   RENDER LOOP
+   ================================================================ */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt  = Math.min(clock.getDelta(), 0.05);
+  const t   = clock.getElapsedTime();
+  const stT = t - stageStartTime;
+  const ls  = 2.5 * dt;
+
+  camera3D.position.lerp(cameraTarget, ls * 0.7);
+  controls.target.lerp(controlsTarget, ls * 0.7);
+  controls.autoRotate = stageConfigs[currentStage].autoRotate;
+  gridHelper.rotation.y = t * 0.02;
+
+  if (currentStage === 0) {
+    // Central sphere pulses
+    s1Center.scale.setScalar(0.9 + Math.sin(t * 2.5) * 0.12);
+    s1Center.children[0].material.opacity = 0.08 + Math.sin(t * 2) * 0.04;
+    // Rays fade in, tips float
+    s1Rays.forEach((mat, i) => {
+      mat.opacity = Math.min(Math.max(stT - i * 0.15, 0) / 0.6, 0.22);
+    });
+    s1RayTips.forEach((sp, i) => {
+      const sc = Math.min(Math.max(stT - i * 0.15 - 0.2, 0) / 0.4, 1);
+      sp.scale.setScalar(sc);
+    });
+  }
+
+  if (currentStage === 1) {
+    s2Center.children[0].material.opacity = 0.08 + Math.sin(t * 2) * 0.04;
+    s2Spheres.forEach(({ mesh, base }, i) => {
+      mesh.position.x = base.x + Math.sin(t * 0.5 + i * 1.7) * 0.35;
+      mesh.position.y = base.y + Math.sin(t * 0.7 + i * 2.1) * 0.28;
+      mesh.position.z = base.z + Math.cos(t * 0.6 + i * 1.4) * 0.35;
+      mesh.children[0].material.opacity = 0.05 + Math.sin(t * 1.5 + i) * 0.03;
+    });
+  }
+
+  if (currentStage === 2) {
+    s3Center.children[0].material.opacity = 0.08 + Math.sin(t * 2) * 0.04;
+    s3Spheres.forEach(({ mesh, base }, i) => {
+      const pulse = 0.92 + Math.sin(t * 2.5 + i * 0.7) * 0.09;
+      mesh.scale.setScalar(pulse);
+      mesh.position.x = base.x + Math.sin(t * 1.2 + i * 2) * 0.09;
+      mesh.position.y = base.y + Math.sin(t * 1.5 + i * 1.5) * 0.09;
+      mesh.position.z = base.z + Math.cos(t * 1.0 + i * 1.3) * 0.09;
+    });
+  }
+
+  if (currentStage === 3) {
+    // System boundary pulses
+    s4Edges.material.opacity = 0.28 + Math.sin(t * 1.4) * 0.14;
+    // Model sphere wanders inside boundary
+    s4Model.position.x = Math.sin(t * 0.7) * 3.5;
+    s4Model.position.y = Math.sin(t * 0.55 + 1.2) * 2.2;
+    s4Model.position.z = Math.cos(t * 0.65) * 3.5;
+    s4Model.children[0].material.opacity = 0.08 + Math.sin(t * 2) * 0.04;
+    s4InnerSpheres.forEach(({ mesh, base }, i) => {
+      mesh.position.x = base.x + Math.sin(t * 0.6 + i * 1.5) * 0.28;
+      mesh.position.y = base.y + Math.sin(t * 0.8 + i * 1.9) * 0.22;
+      mesh.position.z = base.z + Math.cos(t * 0.7 + i * 1.3) * 0.28;
+    });
+  }
+
+  if (currentStage === 4) {
+    const interval = 1.3;
+    s5ExGroups.forEach(({ inSp, outSp, inLbl, outLbl, arrow }, i) => {
+      const fade = Math.min(Math.max(stT - i * interval, 0) / 0.55, 1);
+      inSp.scale.setScalar(fade);
+      outSp.scale.setScalar(fade);
+      inLbl.material.opacity = fade;
+      outLbl.material.opacity = fade;
+      arrow.material.opacity = fade * 0.35;
+    });
+    const qFade = Math.min(Math.max(stT - examples.length * interval, 0) / 0.55, 1);
+    s5NewQ.scale.setScalar(qFade * (1 + Math.sin(t * 3) * 0.1));
+    s5NewQLbl.material.opacity = qFade;
+    s5Pred.scale.setScalar(qFade * (1 + Math.sin(t * 3 + 1) * 0.1));
+    s5PredLbl.material.opacity = qFade;
+    s5NewQ.position.y = 0.2 + Math.sin(t * 1.2) * 0.12 + 2.8 * 0;
+    s5Pred.position.y = 0.7 + Math.sin(t * 1.0 + 1) * 0.14;
+    s5PatternLbl.material.opacity = Math.min(Math.max(stT - (examples.length + 1) * interval, 0) / 0.5, 0.7);
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+</script>
+</body>
+</html>

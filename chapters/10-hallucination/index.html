@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hallucination — LLMs Visualised</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  background: #0a0a0f;
+}
+
+#narrative-panel {
+  width: 40%;
+  min-width: 340px;
+  height: 100vh;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 10;
+  box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+}
+
+#narrative-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem 2.5rem;
+  overflow-y: auto;
+  transition: opacity 0.35s ease;
+}
+
+#narrative-content.fading { opacity: 0; }
+
+.stage-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 1rem;
+}
+
+.stage-title {
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #111;
+  line-height: 1.25;
+  margin-bottom: 1.2rem;
+}
+
+.stage-body {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #444;
+  font-weight: 400;
+}
+
+.stage-body p { margin-bottom: 0.9rem; }
+
+.highlight {
+  display: inline;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.hl-token  { background: rgba(255,183,77,0.2);  color: #e68a00; }
+.hl-vector { background: rgba(66,165,245,0.2);  color: #1565c0; }
+.hl-layer  { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+.hl-predict{ background: rgba(102,187,106,0.2); color: #2e7d32; }
+.hl-cycle  { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+#nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.2rem 2.5rem;
+  border-top: 1px solid #e0e0e0;
+  background: #fff;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.5rem;
+  border: 2px solid #222;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.nav-btn:hover:not(:disabled) { background: #222; color: #fff; }
+.nav-btn:disabled { opacity: 0.25; cursor: default; }
+.nav-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+#progress { display: flex; gap: 0.6rem; align-items: center; }
+
+.dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #ccc;
+  transition: all 0.35s;
+  cursor: pointer;
+}
+.dot.active  { background: #222; transform: scale(1.3); }
+.dot.visited { background: #888; }
+
+#viz-panel { flex: 1; position: relative; height: 100vh; }
+#viz-panel canvas { display: block; }
+
+@media (max-width: 800px) {
+  body { flex-direction: column; }
+  #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+  #viz-panel { height: 55vh; }
+  #narrative-content { padding: 1.5rem; }
+  .stage-title { font-size: 1.4rem; }
+}
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ================================================================
+   STAGES
+   ================================================================ */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'The model navigates meaning-space',
+    body: `<p>When the model generates text, it's navigating a high-dimensional space shaped by everything it was trained on. Dense regions represent topics it knows well — millions of training examples converging in that area.</p>
+           <p>The model's "confidence" is essentially a measure of how dense and consistent that region is. In well-covered territory, many paths converge on similar answers.</p>
+           <p>But not all of semantic space is equally well-mapped. And what happens in the sparse regions is the root cause of <span class="highlight hl-cycle">hallucination</span>.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Dense regions: confident and reliable',
+    body: `<p>Ask the model who wrote <em>Hamlet</em> and it's operating in extremely dense territory. Millions of training documents converge on <strong>Shakespeare</strong>. The model's path through this region is well-lit, well-defined, consistent.</p>
+           <p>In dense regions, the model isn't "looking up" facts — it's navigating through a region of its distribution where the <span class="highlight hl-vector">probability mass</span> is tightly concentrated.</p>
+           <p>The glow intensity here represents confidence. Bright = many consistent training signals. The path forward is unambiguous.</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Sparse regions: the model wanders',
+    body: `<p>Now ask about an obscure fact — an unpublished manuscript, a niche technical detail, last week's news. The model has entered sparse territory: few training examples, weak signal, uncertain ground.</p>
+           <p>In sparse regions, the probability mass is spread thin. Many plausible-sounding continuations score similarly. The model's path becomes <span class="highlight hl-predict">uncertain, branching</span>.</p>
+           <p>Crucially, the model has no mechanism to say "I don't know this." It must always produce a next token — it navigates onward even in the dark.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Hallucination: confident, but wrong',
+    body: `<p>The model generates a response — confident-sounding, grammatically correct, plausibly structured. But it was produced by interpolating across sparse territory, extrapolating patterns from nearby regions.</p>
+           <p>This is a <span class="highlight hl-cycle">hallucination</span>: an output that sounds authoritative but lacks grounding in training data. The model didn't "lie" — it can't distinguish what it knows from what it plausibly inferred.</p>
+           <p>The danger is that hallucinated outputs look identical to grounded ones. Confidence in tone is no indicator of accuracy in content.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'RAG: grounding the path in real data',
+    body: `<p>Retrieval-Augmented Generation (RAG) addresses hallucination by retrieving relevant documents and injecting them into the context. This effectively <span class="highlight hl-predict">places verified data</span> alongside the model's path.</p>
+           <p>Instead of navigating sparse territory alone, the model now has anchors — actual text from reliable sources. It can follow the retrieved documents rather than infer from thin training signal.</p>
+           <p>RAG doesn't make the model "smarter." It changes the territory: replacing sparse, uncertain space with dense, verified evidence the model can navigate confidently.</p>`,
+  },
+];
+
+/* ================================================================
+   THREE.JS SETUP
+   ================================================================ */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.008);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 4, 20);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.4;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+scene.add(Object.assign(new THREE.PointLight(0x4444ff, 0.3, 60), { position: new THREE.Vector3(-8, 8, 4) }));
+
+const gridHelper = new THREE.GridHelper(40, 40, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.25;
+scene.add(gridHelper);
+
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color, fontSize = 32, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512; canvas.height = 64;
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pw = ctx.measureText(text).width + 28, ph = 44;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, (512 - pw) / 2, (64 - ph) / 2, pw, ph, 8); ctx.fill();
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${~~(c.r*255)},${~~(c.g*255)},${~~(c.b*255)})`;
+  ctx.fillText(text, 256, 33);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function makeSphere(radius, color, emissiveIntensity = 0.4, glowScale = 1.7) {
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity, roughness: 0.25, metalness: 0.1 });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 32), mat);
+  mesh.add(new THREE.Mesh(new THREE.SphereGeometry(radius * glowScale, 32, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.1 })));
+  return mesh;
+}
+
+function makeLine(from, to, color, opacity = 0.4, dashed = false) {
+  const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+  const mat = dashed
+    ? new THREE.LineDashedMaterial({ color, transparent: true, opacity, dashSize: 0.35, gapSize: 0.2 })
+    : new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+  const line = new THREE.Line(geo, mat);
+  if (dashed) line.computeLineDistances();
+  return line;
+}
+
+/* ================================================================
+   SCENE OBJECTS
+   ================================================================ */
+
+const stageGroup = new THREE.Group();
+scene.add(stageGroup);
+
+// ---- Stage 1: Overview — model sphere + field of training data ----
+const s1Group = new THREE.Group();
+stageGroup.add(s1Group);
+
+// Moving model sphere (amber)
+const s1Model = makeSphere(0.55, 0xffb74d, 0.55, 1.9);
+s1Group.add(s1Model);
+
+// Trail of visited positions
+const s1TrailPath = [
+  new THREE.Vector3(-6, 0, 0),
+  new THREE.Vector3(-3, 1, 0.5),
+  new THREE.Vector3(0, 0.5, -0.5),
+];
+for (let i = 0; i < s1TrailPath.length - 1; i++) {
+  s1Group.add(makeLine(s1TrailPath[i], s1TrailPath[i+1], 0xffb74d, 0.2));
+}
+s1TrailPath.forEach(pos => {
+  const sp = makeSphere(0.12, 0xffb74d, 0.2, 1.3);
+  sp.position.copy(pos);
+  s1Group.add(sp);
+});
+
+// Point cloud of training data — two regions: dense (blue) and sparse (right)
+const s1DataDense = [];
+for (let i = 0; i < 60; i++) {
+  const pos = new THREE.Vector3(
+    (Math.random() - 0.5) * 8 - 4,
+    (Math.random() - 0.5) * 5,
+    (Math.random() - 0.5) * 6 - 2
+  );
+  const sp = makeSphere(0.08 + Math.random() * 0.06, 0x42a5f5, 0.3, 1.3);
+  sp.position.copy(pos);
+  s1Group.add(sp);
+  s1DataDense.push({ mesh: sp, base: pos.clone() });
+}
+
+const s1DataSparse = [];
+for (let i = 0; i < 12; i++) {
+  const pos = new THREE.Vector3(
+    (Math.random() - 0.5) * 8 + 5,
+    (Math.random() - 0.5) * 5,
+    (Math.random() - 0.5) * 6
+  );
+  const sp = makeSphere(0.08 + Math.random() * 0.06, 0x42a5f5, 0.15, 1.3);
+  sp.position.copy(pos);
+  s1Group.add(sp);
+  s1DataSparse.push({ mesh: sp, base: pos.clone() });
+}
+
+const s1DenseLabel = makeTextSprite('dense training data', 0x42a5f5, 20, 0.55);
+s1DenseLabel.scale.set(4, 0.48, 1);
+s1DenseLabel.position.set(-4, -3.5, 0);
+s1Group.add(s1DenseLabel);
+
+const s1SparseLabel = makeTextSprite('sparse region', 0x78909c, 20, 0.55);
+s1SparseLabel.scale.set(3.5, 0.48, 1);
+s1SparseLabel.position.set(5, -3.5, 0);
+s1Group.add(s1SparseLabel);
+
+const s1ModelLabel = makeTextSprite('model', 0xffb74d, 22, 0.7);
+s1ModelLabel.scale.set(2.5, 0.45, 1);
+s1ModelLabel.position.set(0, 1.8, 0);
+s1Group.add(s1ModelLabel);
+
+// ---- Stage 2: Confident / dense region ----
+const s2Group = new THREE.Group();
+stageGroup.add(s2Group);
+
+const s2Model = makeSphere(0.65, 0xffb74d, 0.65, 2.0);
+s2Model.position.set(0, 0, 0);
+s2Group.add(s2Model);
+
+const s2ConfLabel = makeTextSprite('high confidence', 0x66bb6a, 24, 0.75);
+s2ConfLabel.scale.set(4, 0.55, 1);
+s2ConfLabel.position.set(0, 3.2, 0);
+s2Group.add(s2ConfLabel);
+
+// Dense cluster of blue spheres all around
+const s2Dense = [];
+for (let i = 0; i < 55; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.random() * Math.PI;
+  const r = 1.8 + Math.random() * 3.0;
+  const pos = new THREE.Vector3(
+    r * Math.sin(phi) * Math.cos(theta),
+    r * Math.cos(phi),
+    r * Math.sin(phi) * Math.sin(theta)
+  );
+  const brightness = 0.4 + Math.random() * 0.35;
+  const sp = makeSphere(0.1 + Math.random() * 0.1, 0x42a5f5, brightness, 1.5);
+  sp.position.copy(pos);
+  s2Group.add(sp);
+  s2Dense.push({ mesh: sp, base: pos.clone() });
+}
+
+// Clear path through the cluster
+const s2Path = [
+  new THREE.Vector3(-6, 0, 0),
+  new THREE.Vector3(-3, 0.5, 0.3),
+  new THREE.Vector3(0, 0, 0),
+];
+for (let i = 0; i < s2Path.length - 1; i++) {
+  const geo = new THREE.BufferGeometry().setFromPoints([s2Path[i], s2Path[i+1]]);
+  const mat = new THREE.LineBasicMaterial({ color: 0xffb74d, transparent: true, opacity: 0.6 });
+  s2Group.add(new THREE.Line(geo, mat));
+}
+
+const s2FactLabel = makeTextSprite('"Who wrote Hamlet? → Shakespeare"', 0xffffff, 20, 0.7);
+s2FactLabel.scale.set(7, 0.55, 1);
+s2FactLabel.position.set(0, -3.5, 0);
+s2Group.add(s2FactLabel);
+
+// ---- Stage 3: Sparse region — model wanders ----
+const s3Group = new THREE.Group();
+stageGroup.add(s3Group);
+
+const s3Model = makeSphere(0.65, 0xffb74d, 0.25, 1.8);
+s3Model.position.set(0, 0, 0);
+s3Group.add(s3Model);
+
+// Sparse data points
+const s3Sparse = [];
+for (let i = 0; i < 14; i++) {
+  const pos = new THREE.Vector3(
+    (Math.random() - 0.5) * 14,
+    (Math.random() - 0.5) * 8,
+    (Math.random() - 0.5) * 10
+  );
+  const sp = makeSphere(0.1 + Math.random() * 0.08, 0x42a5f5, 0.15, 1.4);
+  sp.position.copy(pos);
+  s3Group.add(sp);
+  s3Sparse.push({ mesh: sp, base: pos.clone() });
+}
+
+// Multiple branching paths (uncertainty)
+const s3BranchColors = [0xef5350, 0xab47bc, 0x42a5f5, 0x66bb6a];
+const s3Branches = [];
+for (let b = 0; b < 4; b++) {
+  const angle = (b / 4) * Math.PI * 2 - 0.4;
+  const dir = new THREE.Vector3(Math.cos(angle) * 1.2, Math.sin(angle * 0.5) * 0.6, Math.sin(angle) * 0.8);
+  const end = dir.normalize().multiplyScalar(5);
+  const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), end]);
+  const mat = new THREE.LineBasicMaterial({ color: s3BranchColors[b], transparent: true, opacity: 0.25 });
+  const line = new THREE.Line(geo, mat);
+  s3Group.add(line);
+  s3Branches.push({ line, mat, end });
+}
+
+const s3UncertainLabel = makeTextSprite('low confidence — many paths', 0xef5350, 22, 0.65);
+s3UncertainLabel.scale.set(5, 0.52, 1);
+s3UncertainLabel.position.set(0, 4.0, 0);
+s3Group.add(s3UncertainLabel);
+
+const s3QueryLabel = makeTextSprite('"Unpublished 1887 chapter, details?"', 0x888888, 20, 0.6);
+s3QueryLabel.scale.set(6.5, 0.52, 1);
+s3QueryLabel.position.set(0, -3.8, 0);
+s3Group.add(s3QueryLabel);
+
+// ---- Stage 4: Hallucination ----
+const s4Group = new THREE.Group();
+stageGroup.add(s4Group);
+
+const s4Model = makeSphere(0.6, 0xffb74d, 0.25, 1.8);
+s4Model.position.set(-2, 0, 0);
+s4Group.add(s4Model);
+
+// Sparse data (same sparse region)
+const s4SparseData = [];
+for (let i = 0; i < 12; i++) {
+  const pos = new THREE.Vector3(
+    (Math.random() - 0.5) * 12 - 2,
+    (Math.random() - 0.5) * 7,
+    (Math.random() - 0.5) * 9
+  );
+  const sp = makeSphere(0.09 + Math.random() * 0.07, 0x42a5f5, 0.12, 1.4);
+  sp.position.copy(pos);
+  s4Group.add(sp);
+  s4SparseData.push({ mesh: sp, base: pos.clone() });
+}
+
+// The hallucinated output — large, confident-looking, but in wrong place
+const s4Hallucination = makeSphere(0.75, 0x66bb6a, 0.7, 2.1);
+s4Hallucination.position.set(4, 1, 0);
+s4Group.add(s4Hallucination);
+
+// Line from model to hallucination
+s4Group.add(makeLine(new THREE.Vector3(-2, 0, 0), new THREE.Vector3(4, 1, 0), 0x66bb6a, 0.35));
+
+const s4HallLabel = makeTextSprite('"The chapter was published in 1891"', 0x66bb6a, 22, 0.8);
+s4HallLabel.scale.set(6.5, 0.58, 1);
+s4HallLabel.position.set(4, 2.6, 0);
+s4Group.add(s4HallLabel);
+
+const s4WarnLabel = makeTextSprite('! ungrounded — no data nearby', 0xef5350, 22, 0.75);
+s4WarnLabel.scale.set(5.5, 0.55, 1);
+s4WarnLabel.position.set(4, -1.5, 0);
+s4Group.add(s4WarnLabel);
+
+// "Confident tone, no factual basis" label
+const s4SubLabel = makeTextSprite('sounds authoritative — may be wrong', 0x888888, 18, 0.55);
+s4SubLabel.scale.set(5.5, 0.48, 1);
+s4SubLabel.position.set(4, -2.5, 0);
+s4Group.add(s4SubLabel);
+
+const s4ModelLabel = makeTextSprite('model (lost in sparse space)', 0xffb74d, 18, 0.6);
+s4ModelLabel.scale.set(5, 0.45, 1);
+s4ModelLabel.position.set(-2, 1.6, 0);
+s4Group.add(s4ModelLabel);
+
+// ---- Stage 5: RAG — grounding ----
+const s5Group = new THREE.Group();
+stageGroup.add(s5Group);
+
+const s5Model = makeSphere(0.65, 0xffb74d, 0.55, 1.9);
+s5Model.position.set(-4, 0, 0);
+s5Group.add(s5Model);
+
+// Retrieved documents as bright amber anchor spheres
+const ragDocs = [
+  { pos: new THREE.Vector3(-1.5, 1, 0.5),  label: 'Doc 1: Wikipedia' },
+  { pos: new THREE.Vector3(0.5,  0, -0.8), label: 'Doc 2: Archive' },
+  { pos: new THREE.Vector3(-0.5, -1, 0.8), label: 'Doc 3: Journal' },
+];
+
+const s5RagSpheres = [];
+const s5RagLabels = [];
+ragDocs.forEach(({ pos, label }, i) => {
+  const sp = makeSphere(0.45, 0xffb74d, 0.6, 1.9);
+  sp.position.copy(pos);
+  s5Group.add(sp);
+  s5RagSpheres.push(sp);
+
+  const lbl = makeTextSprite(label, 0xffb74d, 20, 0.75);
+  lbl.scale.set(3.5, 0.48, 1);
+  lbl.position.set(pos.x, pos.y + 1.0, pos.z);
+  s5Group.add(lbl);
+  s5RagLabels.push(lbl);
+});
+
+// Path: model → doc1 → doc2 → doc3 → grounded output
+const s5PathPoints = [
+  new THREE.Vector3(-4, 0, 0),
+  ragDocs[0].pos.clone(),
+  ragDocs[1].pos.clone(),
+  ragDocs[2].pos.clone(),
+  new THREE.Vector3(3.5, 0.5, 0),
+];
+for (let i = 0; i < s5PathPoints.length - 1; i++) {
+  s5Group.add(makeLine(s5PathPoints[i], s5PathPoints[i+1], 0xffb74d, 0.5));
+}
+
+// Grounded output
+const s5GroundedOutput = makeSphere(0.65, 0x66bb6a, 0.65, 1.9);
+s5GroundedOutput.position.set(3.5, 0.5, 0);
+s5Group.add(s5GroundedOutput);
+
+const s5OutputLabel = makeTextSprite('"The chapter (1889, per Archive)"', 0x66bb6a, 22, 0.8);
+s5OutputLabel.scale.set(6.5, 0.58, 1);
+s5OutputLabel.position.set(3.5, 2.2, 0);
+s5Group.add(s5OutputLabel);
+
+const s5GroundedTag = makeTextSprite('grounded — cited source', 0x66bb6a, 20, 0.65);
+s5GroundedTag.scale.set(4, 0.48, 1);
+s5GroundedTag.position.set(3.5, -1.2, 0);
+s5Group.add(s5GroundedTag);
+
+const s5RagLabel = makeTextSprite('RAG: retrieved context', 0xffb74d, 22, 0.7);
+s5RagLabel.scale.set(4.5, 0.52, 1);
+s5RagLabel.position.set(-0.5, 3.2, 0);
+s5Group.add(s5RagLabel);
+
+const s5ModelLabel = makeTextSprite('model', 0xffb74d, 20, 0.65);
+s5ModelLabel.scale.set(2.5, 0.45, 1);
+s5ModelLabel.position.set(-4, 1.6, 0);
+s5Group.add(s5ModelLabel);
+
+/* ================================================================
+   STAGE CONFIG + VISIBILITY
+   ================================================================ */
+
+const stageConfigs = [
+  { camera: { x: 2, y: 4, z: 18 },  target: { x: 0, y: 0.5, z: 0 },  autoRotate: true  },
+  { camera: { x: 5, y: 5, z: 14 },  target: { x: 0, y: 0, z: 0 },    autoRotate: true  },
+  { camera: { x: 4, y: 5, z: 16 },  target: { x: 0, y: 0.5, z: 0 },  autoRotate: true  },
+  { camera: { x: 6, y: 4, z: 14 },  target: { x: 1, y: 0.5, z: 0 },  autoRotate: true  },
+  { camera: { x: 2, y: 4, z: 14 },  target: { x: 0, y: 0.5, z: 0 },  autoRotate: true  },
+];
+
+const stageGroups = [s1Group, s2Group, s3Group, s4Group, s5Group];
+
+function setStageVisibility(idx) {
+  stageGroups.forEach((g, i) => { g.visible = i === idx; });
+}
+
+/* ================================================================
+   STAGE MANAGEMENT + NAV
+   ================================================================ */
+
+let currentStage = 0;
+let stageStartTime = 0;
+const cameraTarget   = new THREE.Vector3(2, 4, 18);
+const controlsTarget = new THREE.Vector3(0, 0.5, 0);
+
+const narrativeContent  = document.getElementById('narrative-content');
+const btnPrev           = document.getElementById('btn-prev');
+const btnNext           = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(idx) {
+  const s = STAGES[idx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>`;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(idx) {
+  progressContainer.querySelectorAll('.dot').forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === idx) d.classList.add('active');
+    else if (i < idx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(idx) {
+  btnPrev.disabled = idx === 0;
+  btnNext.disabled = idx === STAGES.length - 1;
+  btnNext.innerHTML = idx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  const cfg = stageConfigs[idx];
+  cameraTarget.set(cfg.camera.x, cfg.camera.y, cfg.camera.z);
+  controlsTarget.set(cfg.target.x, cfg.target.y, cfg.target.z);
+  setStageVisibility(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+  stageStartTime = clock.getElapsedTime();
+}
+
+setStageVisibility(0); updateNarrative(0); updateProgress(0); updateButtons(0);
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goToStage(currentStage + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); goToStage(currentStage - 1); }
+});
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth, h = vizPanel.clientHeight;
+  camera3D.aspect = w / h; camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ================================================================
+   RENDER LOOP
+   ================================================================ */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt  = Math.min(clock.getDelta(), 0.05);
+  const t   = clock.getElapsedTime();
+  const stT = t - stageStartTime;
+  const ls  = 2.5 * dt;
+
+  camera3D.position.lerp(cameraTarget, ls * 0.7);
+  controls.target.lerp(controlsTarget, ls * 0.7);
+  controls.autoRotate = stageConfigs[currentStage].autoRotate;
+  gridHelper.rotation.y = t * 0.015;
+
+  if (currentStage === 0) {
+    // Model navigates from left (dense) toward right (sparse)
+    const progress = (t * 0.15) % 1;
+    const startPos = new THREE.Vector3(-6, 0, 0);
+    const endPos   = new THREE.Vector3(6, 0.5, 0);
+    s1Model.position.lerpVectors(startPos, endPos, progress);
+    s1Model.position.y += Math.sin(t * 1.2) * 0.15;
+    s1Model.position.z += Math.cos(t * 0.9) * 0.1;
+    // Confidence glow fades as model moves into sparse region
+    const conf = 1 - progress * 0.8;
+    s1Model.material.emissiveIntensity = 0.3 + conf * 0.4;
+    s1Model.children[0].material.opacity = 0.06 + conf * 0.12;
+    // Dense data gently floats
+    s1DataDense.forEach(({ mesh, base }, i) => {
+      mesh.position.x = base.x + Math.sin(t * 0.5 + i * 1.3) * 0.12;
+      mesh.position.y = base.y + Math.sin(t * 0.7 + i * 1.8) * 0.1;
+    });
+  }
+
+  if (currentStage === 1) {
+    // Dense region: model pulses brightly, data points float
+    const pulse = 0.95 + Math.sin(t * 2.8) * 0.12;
+    s2Model.scale.setScalar(pulse);
+    s2Model.material.emissiveIntensity = 0.5 + Math.sin(t * 2.5) * 0.2;
+    s2Model.children[0].material.opacity = 0.1 + Math.sin(t * 2) * 0.05;
+    s2Dense.forEach(({ mesh, base }, i) => {
+      mesh.position.x = base.x + Math.sin(t * 0.6 + i * 1.4) * 0.12;
+      mesh.position.y = base.y + Math.sin(t * 0.8 + i * 1.9) * 0.1;
+      mesh.position.z = base.z + Math.cos(t * 0.5 + i * 1.2) * 0.12;
+      mesh.children[0].material.opacity = 0.06 + Math.sin(t * 2 + i) * 0.04;
+    });
+  }
+
+  if (currentStage === 2) {
+    // Sparse region: model wanders wide
+    s3Model.position.x = Math.sin(t * 0.7) * 2.5;
+    s3Model.position.y = Math.sin(t * 0.9 + 1) * 1.8;
+    s3Model.position.z = Math.cos(t * 0.55) * 1.5;
+    // Dim, uncertain glow
+    s3Model.material.emissiveIntensity = 0.15 + Math.sin(t * 3) * 0.1;
+    s3Model.children[0].material.opacity = 0.04 + Math.abs(Math.sin(t * 2)) * 0.03;
+    // Branches flash with low intensity
+    s3Branches.forEach(({ mat }, i) => {
+      mat.opacity = 0.15 + Math.sin(t * 1.5 + i * 1.7) * 0.12;
+    });
+    s3Sparse.forEach(({ mesh, base }, i) => {
+      mesh.position.x = base.x + Math.sin(t * 0.4 + i * 1.6) * 0.2;
+      mesh.position.y = base.y + Math.sin(t * 0.5 + i * 2.0) * 0.15;
+    });
+  }
+
+  if (currentStage === 3) {
+    // Hallucination: model dim, output sphere pulses confidently
+    s4Model.position.x = -2 + Math.sin(t * 0.8) * 0.5;
+    s4Model.position.y = Math.sin(t * 0.6 + 1) * 0.4;
+    s4Model.material.emissiveIntensity = 0.15 + Math.sin(t * 2.5) * 0.08;
+    // Hallucinated output pulses bright
+    const hPulse = 0.95 + Math.sin(t * 3) * 0.12;
+    s4Hallucination.scale.setScalar(hPulse);
+    s4Hallucination.material.emissiveIntensity = 0.55 + Math.sin(t * 3) * 0.2;
+    s4Hallucination.children[0].material.opacity = 0.1 + Math.sin(t * 2.5) * 0.05;
+    s4SparseData.forEach(({ mesh, base }, i) => {
+      mesh.position.x = base.x + Math.sin(t * 0.4 + i * 1.5) * 0.15;
+      mesh.position.y = base.y + Math.sin(t * 0.5 + i * 1.8) * 0.12;
+    });
+  }
+
+  if (currentStage === 4) {
+    // RAG: doc spheres pulse, model sphere now confident
+    const interval = 0.9;
+    s5RagSpheres.forEach((sp, i) => {
+      const fade = Math.min(Math.max(stT - i * interval, 0) / 0.55, 1);
+      sp.scale.setScalar(fade * (1 + Math.sin(t * 2.5 + i) * 0.1));
+      sp.material.emissiveIntensity = fade * (0.45 + Math.sin(t * 2 + i * 1.2) * 0.2);
+      sp.children[0].material.opacity = fade * (0.08 + Math.sin(t * 2 + i) * 0.04);
+      s5RagLabels[i].material.opacity = fade;
+    });
+    // Model moves along path
+    const modelProgress = Math.min(stT / (ragDocs.length * interval), 1);
+    const pathIdx = Math.min(Math.floor(modelProgress * (s5PathPoints.length - 1)), s5PathPoints.length - 2);
+    const pathT   = (modelProgress * (s5PathPoints.length - 1)) - pathIdx;
+    s5Model.position.lerpVectors(s5PathPoints[pathIdx], s5PathPoints[pathIdx + 1], pathT);
+    s5Model.children[0].material.opacity = 0.08 + Math.sin(t * 2) * 0.04;
+
+    // Grounded output appears
+    const outFade = Math.min(Math.max(stT - ragDocs.length * interval, 0) / 0.6, 1);
+    s5GroundedOutput.scale.setScalar(outFade * (1 + Math.sin(t * 3) * 0.1));
+    s5GroundedOutput.material.emissiveIntensity = outFade * (0.5 + Math.sin(t * 2.5) * 0.2);
+    s5OutputLabel.material.opacity = outFade;
+    s5GroundedTag.material.opacity = outFade;
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+</script>
+</body>
+</html>

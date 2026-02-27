@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top-k and Top-p: Sampling Strategies</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden; height: 100vh; width: 100vw; display: flex; background: #0a0a0f;
+  }
+
+  #narrative-panel {
+    width: 40%; min-width: 340px; height: 100vh; background: #fafafa;
+    display: flex; flex-direction: column; position: relative; z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 3rem 2.5rem; overflow-y: auto; transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  .stage-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #888; margin-bottom: 1rem; }
+  .stage-title { font-size: 1.9rem; font-weight: 700; color: #111; line-height: 1.25; margin-bottom: 1.2rem; }
+  .stage-body { font-size: 1.05rem; line-height: 1.7; color: #444; font-weight: 400; }
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .highlight { display: inline; padding: 0.1em 0.35em; border-radius: 4px; font-weight: 600; font-size: 0.95em; }
+  .hl-token  { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .hl-vector { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .hl-layer  { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .hl-predict{ background: rgba(102,187,106,0.2); color: #2e7d32; }
+  .hl-cycle  { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+  #nav-bar { display: flex; align-items: center; justify-content: space-between; padding: 1.2rem 2.5rem; border-top: 1px solid #e0e0e0; background: #fff; }
+
+  .nav-btn {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.65rem 1.5rem;
+    border: 2px solid #222; border-radius: 8px; background: #fff; color: #222;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;
+  }
+  .nav-btn:hover:not(:disabled) { background: #222; color: #fff; }
+  .nav-btn:disabled { opacity: 0.25; cursor: default; }
+  .nav-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+  #progress { display: flex; gap: 0.6rem; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; transition: all 0.35s; cursor: pointer; }
+  .dot.active  { background: #222; transform: scale(1.3); }
+  .dot.visited { background: #888; }
+
+  #viz-panel { flex: 1; position: relative; height: 100vh; }
+  #viz-panel canvas { display: block; }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ================================================================
+   STAGES
+   ================================================================ */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'The full distribution',
+    body: `<p>After softmax, we have a <span class="highlight hl-predict">probability distribution</span> over all possible next tokens — sorted here from highest to lowest probability.</p>
+           <p>In practice, the vocabulary has 50,000+ entries. Even rare tokens get some tiny probability. If we sampled from the raw softmax, we'd occasionally generate nonsense.</p>
+           <p>Sampling strategies solve this: filter the distribution down to a sensible set of candidates before sampling.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Top-k filtering',
+    body: `<p><span class="highlight hl-token">Top-k</span> sampling keeps only the k highest-probability tokens and zeros out the rest, then re-normalizes.</p>
+           <p>With k=5, only the top 5 candidates remain. The model cannot sample any token ranked 6th or lower, regardless of its probability.</p>
+           <p>This is simple, predictable, and works well — but has a flaw: k is a fixed number regardless of how the distribution looks. A very peaked distribution and a very flat one both get exactly k candidates.</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Top-p (nucleus) sampling',
+    body: `<p><span class="highlight hl-vector">Top-p</span> (nucleus) sampling is adaptive: keep the smallest set of tokens whose cumulative probability reaches p.</p>
+           <p>With p=0.90, we add tokens in ranked order until their cumulative probability ≥ 90%. For a peaked distribution, that might be just 2–3 tokens. For a flat distribution, it might be 20+.</p>
+           <p>Watch the cumulative line climb. The cutoff adapts to the shape of the distribution — providing tighter control when the model is confident, more freedom when it's uncertain.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Sampling from the filtered set',
+    body: `<p>After filtering — via top-k, top-p, or both — the remaining probabilities are <span class="highlight hl-predict">re-normalized</span> to sum to 1.</p>
+           <p>The model samples from this filtered distribution. The token selected isn't always the highest-probability option — it's drawn proportionally, so second- and third-ranked tokens still get a chance.</p>
+           <p>This randomness is what gives language models their variety. Ask the same prompt twice with temperature > 0, and you'll likely get different responses.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Combining the strategies',
+    body: `<p>In practice, <span class="highlight hl-token">top-k</span>, <span class="highlight hl-vector">top-p</span>, and <span class="highlight hl-cycle">temperature</span> are often applied together.</p>
+           <p>Temperature scales the logits first, making the distribution sharper or flatter. Then top-k and/or top-p clip the candidates. Then we sample from what remains.</p>
+           <p>Typical defaults: temperature=1.0, top-p=0.95, top-k=50. Together they prevent both nonsense (by filtering low-probability tokens) and staleness (by preserving meaningful randomness among top candidates).</p>`,
+  },
+];
+
+/* ================================================================
+   THREE.JS SETUP
+   ================================================================ */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.006);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 4, 20);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 60;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(10, 15, 10);
+scene.add(dir);
+const ptL = new THREE.PointLight(0x4466ff, 0.35, 50);
+ptL.position.set(-8, 8, 5);
+scene.add(ptL);
+
+const grid = new THREE.GridHelper(40, 40, 0x222233, 0x151520);
+grid.material.transparent = true;
+grid.material.opacity = 0.3;
+scene.add(grid);
+
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+
+function makeTextSprite(text, color, fontSize = 32, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512; canvas.height = 64;
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pw = ctx.measureText(text).width + 28, ph = 44;
+  const px = (canvas.width - pw) / 2, py = (canvas.height - ph) / 2;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, px, py, pw, ph, 8); ctx.fill();
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+
+function makeLine(from, to, color, opacity = 0.5) {
+  const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+  return new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+}
+
+const stageRoot = new THREE.Group();
+scene.add(stageRoot);
+
+/* ================================================================
+   DATA — sorted descending by probability
+   ================================================================ */
+
+const TOKENS  = ['"is"', '"was"', '"the"', '"can"', '"will"', '"a"', '"ran"', '"flew"', '"if"', '"not"'];
+const RAW_PROBS = [0.28,   0.21,   0.15,   0.10,    0.08,    0.06,  0.05,    0.04,     0.02,   0.01];
+// Already normalized, sums to 1.0
+
+// Cumulative probabilities
+const CUMULATIVE = RAW_PROBS.reduce((acc, p, i) => { acc.push((acc[i-1] || 0) + p); return acc; }, []);
+
+const TOP_K = 5;
+const TOP_P = 0.90;
+const SELECTED_IDX = 2; // '"the"' sampled in stage 4
+
+const N = TOKENS.length;
+const BAR_W = 1.2, BAR_DEPTH = 0.5, BAR_GAP = 0.28;
+const SPACING = BAR_W + BAR_GAP;
+const TOTAL_W = N * SPACING;
+
+function barX(i) { return -TOTAL_W / 2 + i * SPACING + BAR_W / 2; }
+
+// Max height scale
+const MAX_H = 4.5;
+const SCALE = MAX_H / Math.max(...RAW_PROBS);
+
+// Colors: gradient from amber (high) to blue (low)
+const BAR_COLORS = [
+  0xffb74d, 0xffa726, 0xef5350, 0xab47bc, 0x7e57c2,
+  0x5c6bc0, 0x42a5f5, 0x26a69a, 0x66bb6a, 0x78909c
+];
+
+/* ================================================================
+   SHARED BAR BUILDER
+   ================================================================ */
+
+function buildBars(parent, probs, colors, dimMask = null, labelFn = null) {
+  probs.forEach((p, i) => {
+    const dimmed = dimMask && dimMask[i];
+    const h = Math.max(p * SCALE, 0.05);
+    const col = dimmed ? 0x222233 : colors[i];
+    const emissive = dimmed ? 0x111122 : colors[i];
+    const mat = new THREE.MeshStandardMaterial({
+      color: col, emissive, emissiveIntensity: dimmed ? 0.05 : 0.25,
+      roughness: 0.35, metalness: 0.1,
+      transparent: true, opacity: dimmed ? 0.2 : 0.9,
+    });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(BAR_W, h, BAR_DEPTH), mat);
+    mesh.position.set(barX(i), h / 2, 0);
+    mesh.userData.barIdx = i;
+    parent.add(mesh);
+
+    // Label
+    const labelColor = dimmed ? 0x333344 : colors[i];
+    const text = labelFn ? labelFn(i) : TOKENS[i];
+    const lbl = makeTextSprite(text, labelColor, 17, dimmed ? 0.3 : 0.7);
+    lbl.scale.set(2.6, 0.36, 1);
+    lbl.position.set(barX(i), -1.4, 0);
+    parent.add(lbl);
+  });
+
+  // Baseline
+  parent.add(makeLine(
+    new THREE.Vector3(-TOTAL_W/2 - 0.5, 0, 0),
+    new THREE.Vector3(TOTAL_W/2 + 0.5, 0, 0),
+    0x334455, 0.5
+  ));
+}
+
+/* ================================================================
+   STAGE 1 — Full distribution
+   ================================================================ */
+
+const s1 = new THREE.Group();
+stageRoot.add(s1);
+
+buildBars(s1, RAW_PROBS, BAR_COLORS, null, i => `${TOKENS[i]}`);
+
+// Probability labels on top
+RAW_PROBS.forEach((p, i) => {
+  const h = p * SCALE;
+  const lbl = makeTextSprite(`${(p*100).toFixed(0)}%`, BAR_COLORS[i], 16, 0.6);
+  lbl.scale.set(2.2, 0.34, 1);
+  lbl.position.set(barX(i), h + 0.5, 0);
+  s1.add(lbl);
+});
+
+const s1Title = makeTextSprite('full probability distribution (sorted)', 0x888888, 20, 0.5);
+s1Title.scale.set(6.2, 0.42, 1);
+s1Title.position.set(0, -2.8, 0);
+s1.add(s1Title);
+
+/* ================================================================
+   STAGE 2 — Top-k
+   ================================================================ */
+
+const s2 = new THREE.Group();
+stageRoot.add(s2);
+
+const dimMaskK = RAW_PROBS.map((_, i) => i >= TOP_K);
+buildBars(s2, RAW_PROBS, BAR_COLORS, dimMaskK, i => TOKENS[i]);
+
+// Top-k cutoff line
+const kLineX = barX(TOP_K - 1) + SPACING / 2;
+s2.add(makeLine(
+  new THREE.Vector3(kLineX, -0.3, 0),
+  new THREE.Vector3(kLineX, MAX_H + 0.5, 0),
+  0xef5350, 0.8
+));
+
+const kLbl = makeTextSprite(`k = ${TOP_K}`, 0xef5350, 22, 0.75);
+kLbl.scale.set(2.8, 0.42, 1);
+kLbl.position.set(kLineX + 1.4, MAX_H + 0.4, 0);
+s2.add(kLbl);
+
+const keepLbl = makeTextSprite('keep →', 0x66bb6a, 19, 0.6);
+keepLbl.scale.set(3, 0.4, 1);
+keepLbl.position.set(barX(2), MAX_H - 0.8, 0);
+s2.add(keepLbl);
+
+const discardLbl = makeTextSprite('← discard', 0xee4444, 19, 0.6);
+discardLbl.scale.set(3.2, 0.4, 1);
+discardLbl.position.set(barX(7), MAX_H - 0.8, 0);
+s2.add(discardLbl);
+
+const s2Title = makeTextSprite(`top-k (k=${TOP_K}): keep only 5 highest-prob tokens`, 0x888888, 20, 0.5);
+s2Title.scale.set(7, 0.42, 1);
+s2Title.position.set(0, -2.8, 0);
+s2.add(s2Title);
+
+/* ================================================================
+   STAGE 3 — Top-p
+   ================================================================ */
+
+const s3 = new THREE.Group();
+stageRoot.add(s3);
+
+// Find top-p cutoff index
+let topPIdx = 0;
+for (let i = 0; i < CUMULATIVE.length; i++) {
+  if (CUMULATIVE[i] >= TOP_P) { topPIdx = i; break; }
+}
+const dimMaskP = RAW_PROBS.map((_, i) => i > topPIdx);
+buildBars(s3, RAW_PROBS, BAR_COLORS, dimMaskP, i => TOKENS[i]);
+
+// Cumulative probability bars (overlaid, semi-transparent)
+const s3CumBars = [];
+let cumH = 0;
+RAW_PROBS.forEach((p, i) => {
+  const barH = p * SCALE;
+  const cumBarH = CUMULATIVE[i] * (MAX_H * 0.8);
+  // A flat cumulative-sum indicator line
+  const seg = makeLine(
+    new THREE.Vector3(barX(i) - BAR_W / 2, cumBarH, 0.4),
+    new THREE.Vector3(barX(i) + BAR_W / 2, cumBarH, 0.4),
+    0xffb74d, i <= topPIdx ? 0.9 : 0.3
+  );
+  s3.add(seg);
+  s3CumBars.push({ seg, target: cumBarH });
+
+  // Connect to previous
+  if (i > 0) {
+    const prevCumH = CUMULATIVE[i-1] * (MAX_H * 0.8);
+    s3.add(makeLine(
+      new THREE.Vector3(barX(i) - BAR_W / 2, prevCumH, 0.4),
+      new THREE.Vector3(barX(i) - BAR_W / 2, cumBarH, 0.4),
+      0xffb74d, i <= topPIdx ? 0.7 : 0.2
+    ));
+  }
+});
+
+// Top-p threshold line
+const pThreshH = TOP_P * (MAX_H * 0.8);
+s3.add(makeLine(
+  new THREE.Vector3(-TOTAL_W / 2 - 0.5, pThreshH, 0.4),
+  new THREE.Vector3(TOTAL_W / 2 + 0.5, pThreshH, 0.4),
+  0xab47bc, 0.8
+));
+
+const pLbl = makeTextSprite(`p = ${TOP_P}`, 0xab47bc, 22, 0.75);
+pLbl.scale.set(3, 0.42, 1);
+pLbl.position.set(-TOTAL_W / 2 - 3.2, pThreshH, 0);
+s3.add(pLbl);
+
+const cumLbl = makeTextSprite('cumulative probability', 0xffb74d, 19, 0.6);
+cumLbl.scale.set(4, 0.4, 1);
+cumLbl.position.set(barX(3), MAX_H + 0.5, 0);
+s3.add(cumLbl);
+
+const s3Title = makeTextSprite(`top-p (p=${TOP_P}): keep tokens until cumulative ≥ 90%`, 0x888888, 20, 0.5);
+s3Title.scale.set(7.5, 0.42, 1);
+s3Title.position.set(0, -2.8, 0);
+s3.add(s3Title);
+
+/* ================================================================
+   STAGE 4 — Sampling
+   ================================================================ */
+
+const s4 = new THREE.Group();
+stageRoot.add(s4);
+
+// Re-normalized probs after top-p filter
+const filteredProbs = RAW_PROBS.map((p, i) => i <= topPIdx ? p : 0);
+const filteredSum = filteredProbs.reduce((a, b) => a + b, 0);
+const renormProbs = filteredProbs.map(p => p / filteredSum);
+
+buildBars(s4, renormProbs, BAR_COLORS, renormProbs.map((_, i) => i > topPIdx), i => `${(renormProbs[i]*100).toFixed(0)}%`);
+
+// Highlight selected token
+const selH = renormProbs[SELECTED_IDX] * SCALE;
+const selGlowMat = new THREE.MeshBasicMaterial({ color: 0x66bb6a, transparent: true, opacity: 0.12 });
+const selGlow = new THREE.Mesh(new THREE.BoxGeometry(BAR_W + 0.4, selH + 0.4, BAR_DEPTH + 0.4), selGlowMat);
+selGlow.position.set(barX(SELECTED_IDX), selH / 2, 0);
+s4.add(selGlow);
+
+const selLbl = makeTextSprite('SELECTED', 0x66bb6a, 22, 0.8);
+selLbl.scale.set(3.5, 0.42, 1);
+selLbl.position.set(barX(SELECTED_IDX), selH + 1.2, 0);
+s4.add(selLbl);
+
+const s4Title = makeTextSprite('sample from filtered & re-normalized distribution', 0x888888, 20, 0.5);
+s4Title.scale.set(7.5, 0.42, 1);
+s4Title.position.set(0, -2.8, 0);
+s4.add(s4Title);
+
+/* ================================================================
+   STAGE 5 — Combined strategy
+   ================================================================ */
+
+const s5 = new THREE.Group();
+stageRoot.add(s5);
+
+// Three mini bar charts showing different sampling settings
+const configs = [
+  { label: 'greedy (T=0)', probs: RAW_PROBS.map((_, i) => i === 0 ? 1.0 : 0.0), color: 0xef5350, yOff: 4.5 },
+  { label: 'top-p=0.9, T=1', probs: renormProbs, color: 0x42a5f5, yOff: 0 },
+  { label: 'T=1.5 (creative)', probs: (() => {
+      function softmax(arr) { const mx = Math.max(...arr); const e = arr.map(v => Math.exp((v-mx)/1.5)); const s = e.reduce((a,b)=>a+b,0); return e.map(v=>v/s); }
+      return softmax(RAW_PROBS.map(p => Math.log(p)));
+    })(), color: 0xab47bc, yOff: -4.5 },
+];
+
+configs.forEach(({ label, probs, color, yOff }) => {
+  const maxP = Math.max(...probs);
+  const scl = 2.8 / (maxP || 1);
+  probs.forEach((p, i) => {
+    const h = Math.max(p * scl, 0.04);
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.2, roughness: 0.4, metalness: 0.1, transparent: true, opacity: 0.85 });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(BAR_W * 0.7, h, BAR_DEPTH * 0.7), mat);
+    mesh.position.set(barX(i), yOff + h / 2, 0);
+    s5.add(mesh);
+  });
+  // Zero line
+  s5.add(makeLine(new THREE.Vector3(-TOTAL_W/2-0.5, yOff, 0), new THREE.Vector3(TOTAL_W/2+0.5, yOff, 0), 0x334455, 0.4));
+  const lbl = makeTextSprite(label, color, 20, 0.7);
+  lbl.scale.set(4.2, 0.42, 1);
+  lbl.position.set(-TOTAL_W/2 - 3.8, yOff + 1, 0);
+  s5.add(lbl);
+});
+
+const s5Title = makeTextSprite('sampling strategy shapes output diversity', 0x888888, 20, 0.5);
+s5Title.scale.set(7, 0.42, 1);
+s5Title.position.set(0, -7, 0);
+s5.add(s5Title);
+
+/* ================================================================
+   STAGE CAMERA & VISIBILITY
+   ================================================================ */
+
+const STAGE_CFGS = [
+  { cam: [0, 2, 19],   tgt: [0, 1, 0],    rot: false },
+  { cam: [0, 2.5, 19], tgt: [0, 1.5, 0],  rot: false },
+  { cam: [0, 2.5, 20], tgt: [0, 1.5, 0],  rot: false },
+  { cam: [0, 2, 18],   tgt: [0, 1, 0],    rot: false },
+  { cam: [0, 0, 25],   tgt: [0, 0, 0],    rot: false },
+];
+const STAGE_GROUPS = [s1, s2, s3, s4, s5];
+function setVis(i) { STAGE_GROUPS.forEach((g, j) => { g.visible = i === j; }); }
+
+/* ================================================================
+   NAV
+   ================================================================ */
+
+let cur = 0, stageT0 = 0;
+const camTgt  = new THREE.Vector3(0, 2, 19);
+const ctrlTgt = new THREE.Vector3(0, 1, 0);
+
+const nc = document.getElementById('narrative-content');
+const pp = document.getElementById('progress');
+const bPrev = document.getElementById('btn-prev');
+const bNext = document.getElementById('btn-next');
+
+STAGES.forEach((_, i) => {
+  const d = document.createElement('div');
+  d.className = 'dot' + (i === 0 ? ' active' : '');
+  d.addEventListener('click', () => go(i));
+  pp.appendChild(d);
+});
+
+function updateText(i) {
+  const s = STAGES[i];
+  nc.classList.add('fading');
+  setTimeout(() => {
+    nc.innerHTML = `<div class="stage-label">${s.label}</div><h2 class="stage-title">${s.title}</h2><div class="stage-body">${s.body}</div>`;
+    nc.classList.remove('fading');
+  }, 300);
+}
+
+function updateDots(i) {
+  pp.querySelectorAll('.dot').forEach((d, j) => {
+    d.classList.remove('active', 'visited');
+    if (j === i) d.classList.add('active');
+    else if (j < i) d.classList.add('visited');
+  });
+}
+
+function updateBtns(i) {
+  bPrev.disabled = i === 0;
+  bNext.innerHTML = i === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function go(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === cur) return;
+  cur = idx;
+  const c = STAGE_CFGS[idx];
+  camTgt.set(...c.cam);
+  ctrlTgt.set(...c.tgt);
+  setVis(idx);
+  updateText(idx);
+  updateDots(idx);
+  updateBtns(idx);
+  stageT0 = clock.getElapsedTime();
+}
+
+setVis(0); updateText(0); updateDots(0); updateBtns(0);
+
+bNext.addEventListener('click', () => go(cur + 1));
+bPrev.addEventListener('click', () => go(cur - 1));
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); go(cur + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); go(cur - 1); }
+});
+window.addEventListener('resize', () => {
+  camera3D.aspect = vizPanel.clientWidth / vizPanel.clientHeight;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+});
+
+/* ================================================================
+   RENDER LOOP
+   ================================================================ */
+
+const clock = new THREE.Clock();
+
+function pulseBars(group, t, baseEmissive = 0.22) {
+  group.children.forEach((c, i) => {
+    if (c.isMesh && c.material.opacity > 0.5) {
+      c.material.emissiveIntensity = baseEmissive + Math.sin(t * 1.3 + i * 0.6) * 0.08;
+    }
+  });
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const st = t - stageT0;
+
+  camera3D.position.lerp(camTgt, 2.5 * dt * 0.7);
+  controls.target.lerp(ctrlTgt, 2.5 * dt * 0.7);
+  controls.autoRotate = STAGE_CFGS[cur].rot;
+  grid.rotation.y = t * 0.02;
+
+  /* --- Stage 1 --- */
+  if (cur === 0) {
+    pulseBars(s1, t);
+  }
+
+  /* --- Stage 2 --- */
+  if (cur === 1) {
+    pulseBars(s2, t);
+    // Cutoff line pulses
+    s2.children.forEach(c => {
+      if (c.isLine && c.material.color.getHex() === 0xef5350) {
+        c.material.opacity = 0.6 + Math.sin(t * 2.8) * 0.25;
+      }
+    });
+  }
+
+  /* --- Stage 3 --- */
+  if (cur === 2) {
+    pulseBars(s3, t, 0.2);
+    // Threshold line pulses
+    s3.children.forEach(c => {
+      if (c.isLine && c.material.color.getHex() === 0xab47bc) {
+        c.material.opacity = 0.6 + Math.sin(t * 2.5) * 0.25;
+      }
+    });
+  }
+
+  /* --- Stage 4 --- */
+  if (cur === 3) {
+    pulseBars(s4, t, 0.2);
+    selGlowMat.opacity = 0.08 + Math.sin(t * 3.5) * 0.06;
+    selGlow.scale.setScalar(1 + Math.sin(t * 2.8) * 0.04);
+    // Highlight selected bar extra
+    s4.children.forEach(c => {
+      if (c.isMesh && c.userData.barIdx === SELECTED_IDX) {
+        c.material.emissiveIntensity = 0.35 + Math.sin(t * 3.5) * 0.2;
+      }
+    });
+  }
+
+  /* --- Stage 5 --- */
+  if (cur === 4) {
+    s5.children.forEach((c, i) => {
+      if (c.isMesh) {
+        c.material.emissiveIntensity = 0.15 + Math.sin(t * 1.2 + i * 0.4) * 0.07;
+      }
+    });
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+</script>
+</body>
+</html>

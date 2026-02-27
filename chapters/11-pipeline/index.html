@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Complete Pipeline — LLMs Visualised</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  background: #0a0a0f;
+}
+
+#narrative-panel {
+  width: 40%;
+  min-width: 340px;
+  height: 100vh;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 10;
+  box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+}
+
+#narrative-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem 2.5rem;
+  overflow-y: auto;
+  transition: opacity 0.35s ease;
+}
+
+#narrative-content.fading { opacity: 0; }
+
+.stage-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 1rem;
+}
+
+.stage-title {
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #111;
+  line-height: 1.25;
+  margin-bottom: 1.2rem;
+}
+
+.stage-body {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #444;
+  font-weight: 400;
+}
+
+.stage-body p { margin-bottom: 0.9rem; }
+
+.highlight {
+  display: inline;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.hl-token  { background: rgba(255,183,77,0.2);  color: #e68a00; }
+.hl-vector { background: rgba(66,165,245,0.2);  color: #1565c0; }
+.hl-layer  { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+.hl-predict{ background: rgba(102,187,106,0.2); color: #2e7d32; }
+.hl-cycle  { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+#nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.2rem 2.5rem;
+  border-top: 1px solid #e0e0e0;
+  background: #fff;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.5rem;
+  border: 2px solid #222;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.nav-btn:hover:not(:disabled) { background: #222; color: #fff; }
+.nav-btn:disabled { opacity: 0.25; cursor: default; }
+.nav-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+#progress { display: flex; gap: 0.6rem; align-items: center; }
+
+.dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #ccc;
+  transition: all 0.35s;
+  cursor: pointer;
+}
+.dot.active  { background: #222; transform: scale(1.3); }
+.dot.visited { background: #888; }
+
+#viz-panel { flex: 1; position: relative; height: 100vh; }
+#viz-panel canvas { display: block; }
+
+@media (max-width: 800px) {
+  body { flex-direction: column; }
+  #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+  #viz-panel { height: 55vh; }
+  #narrative-content { padding: 1.5rem; }
+  .stage-title { font-size: 1.4rem; }
+}
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ================================================================
+   STAGES
+   ================================================================ */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 6',
+    title: 'It starts with text',
+    body: `<p>You type a prompt. Somewhere, a server receives it as a plain string. That's all — just characters.</p>
+           <p>What follows is a precise, learned pipeline that transforms this text into the next token of a response. Then the next. Then the next.</p>
+           <p>This chapter is the <span class="highlight hl-cycle">complete picture</span> — every transformation from your input to each output token, assembled into a single view. Let's walk through it together.</p>`,
+  },
+  {
+    label: 'Stage 2 of 6',
+    title: 'Step 1 — Tokenisation',
+    body: `<p>The first transformation: your text is split into <span class="highlight hl-token">tokens</span> — sub-word pieces matched against the model's vocabulary of ~50,000 entries.</p>
+           <p><strong>"The cat sat"</strong> becomes three integer IDs: [464, 3797, 3332]. Common words stay whole; rare words are split into sub-pieces.</p>
+           <p>These integer IDs are the only thing the model ever "reads." Everything else — meaning, grammar, reasoning — emerges from what the network learns to do with them.</p>`,
+  },
+  {
+    label: 'Stage 3 of 6',
+    title: 'Step 2 — Embedding',
+    body: `<p>Each token ID is looked up in a learned embedding table, producing a high-dimensional <span class="highlight hl-vector">vector</span> — typically 768 to 12,288 numbers, depending on the model.</p>
+           <p>A positional encoding is added so the model knows the order: token 1 vs token 2 vs token 3 all have different positional flavors mixed in.</p>
+           <p>Now each token is a point in an abstract vector space. Tokens with similar meanings cluster together. The geometry encodes linguistic relationships the model learned during training.</p>`,
+  },
+  {
+    label: 'Stage 4 of 6',
+    title: 'Step 3 — Attention & Layers',
+    body: `<p>The token vectors flow through a stack of <span class="highlight hl-layer">transformer blocks</span> — 12 in a small model, 96 in a large one. Each block has two parts: attention and a feed-forward network.</p>
+           <p>Attention lets each token "look at" every other token and gather relevant context. <em>"The cat sat on..."</em> — when processing "it," attention reaches back to "cat" and learns the reference.</p>
+           <p>After all layers, each token's vector has been transformed from a raw embedding into a rich, context-aware representation carrying the full meaning of its position in the sequence.</p>`,
+  },
+  {
+    label: 'Stage 5 of 6',
+    title: 'Step 4 — Softmax & Sampling',
+    body: `<p>The final token's vector is passed through an output projection, producing <strong>logits</strong> — one raw score per vocabulary item. Softmax turns these into a <span class="highlight hl-predict">probability distribution</span>.</p>
+           <p>Sampling picks the next token according to this distribution. Temperature controls how spread-out the distribution is. Top-k and top-p limit which tokens are eligible.</p>
+           <p>The selected token is the model's prediction — the most probable (or interestingly probable) next word given everything before it.</p>`,
+  },
+  {
+    label: 'Stage 6 of 6',
+    title: 'The loop — token by token',
+    body: `<p>The selected token is <span class="highlight hl-cycle">appended to the input</span>, and the entire pipeline runs again. The model processes the full context — original prompt plus all generated tokens — to pick the next one.</p>
+           <p>This is <strong>autoregressive generation</strong>: each token is conditioned on all previous ones. A 200-word response requires 200 forward passes through the full model.</p>
+           <p>That's the complete picture — from raw text, through tokenisation, embedding, attention, softmax, sampling, and back to the start. Millions of parameters, learned from vast text, operating in concert to produce the next character of thought.</p>`,
+  },
+];
+
+/* ================================================================
+   THREE.JS SETUP
+   ================================================================ */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.006);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 4, 22);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 70;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.35;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+scene.add(Object.assign(new THREE.PointLight(0x4455ff, 0.3, 80), { position: new THREE.Vector3(-10, 10, 5) }));
+scene.add(Object.assign(new THREE.PointLight(0xff5533, 0.2, 80), { position: new THREE.Vector3(10, 5, -5) }));
+
+const gridHelper = new THREE.GridHelper(50, 50, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.25;
+scene.add(gridHelper);
+
+/* ================================================================
+   UTILITIES
+   ================================================================ */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color, fontSize = 32, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512; canvas.height = 64;
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const pw = ctx.measureText(text).width + 28, ph = 44;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, (512 - pw) / 2, (64 - ph) / 2, pw, ph, 8); ctx.fill();
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${~~(c.r*255)},${~~(c.g*255)},${~~(c.b*255)})`;
+  ctx.fillText(text, 256, 33);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function makeSphere(radius, color, emissiveIntensity = 0.4, glowScale = 1.7) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 32, 32),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity, roughness: 0.25, metalness: 0.1 })
+  );
+  mesh.add(new THREE.Mesh(new THREE.SphereGeometry(radius * glowScale, 32, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.1 })));
+  return mesh;
+}
+
+function makeLine(from, to, color, opacity = 0.4) {
+  const geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
+  return new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+}
+
+function makeBox(w, h, d, color, opacity = 0.12) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity })));
+  group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: opacity * 3.5 })));
+  return group;
+}
+
+/* ================================================================
+   SCENE OBJECTS
+   ================================================================ */
+
+const stageGroup = new THREE.Group();
+scene.add(stageGroup);
+
+// ---- Stage 1: Text In ----
+const s1Group = new THREE.Group();
+stageGroup.add(s1Group);
+
+const s1PromptSprite = makeTextSprite('"The cat sat on the mat"', 0xcccccc, 30, 0.7);
+s1PromptSprite.scale.set(7.5, 0.8, 1);
+s1PromptSprite.position.set(0, 1.5, 0);
+s1Group.add(s1PromptSprite);
+
+// Blinking cursor
+const s1Cursor = new THREE.Mesh(
+  new THREE.BoxGeometry(0.08, 0.55, 0.08),
+  new THREE.MeshBasicMaterial({ color: 0x42a5f5, transparent: true, opacity: 0.9 })
+);
+s1Cursor.position.set(4.2, 1.5, 0);
+s1Group.add(s1Cursor);
+
+const s1SubLabel = makeTextSprite('raw text — just a string of characters', 0x666666, 20, 0.5);
+s1SubLabel.scale.set(5.5, 0.48, 1);
+s1SubLabel.position.set(0, -0.5, 0);
+s1Group.add(s1SubLabel);
+
+const s1Arrow = new THREE.Mesh(
+  new THREE.ConeGeometry(0.18, 0.5, 8),
+  new THREE.MeshBasicMaterial({ color: 0x42a5f5, transparent: true, opacity: 0.7 })
+);
+s1Arrow.position.set(0, -1.5, 0);
+s1Arrow.rotation.x = Math.PI;
+s1Group.add(s1Arrow);
+
+// ---- Stage 2: Tokenisation ----
+const s2Group = new THREE.Group();
+stageGroup.add(s2Group);
+
+const TOKEN_DATA = [
+  { text: 'The',  id: '464',  color: 0xffb74d },
+  { text: 'cat',  id: '3797', color: 0xef5350 },
+  { text: 'sat',  id: '3332', color: 0x42a5f5 },
+  { text: 'on',   id: '319',  color: 0xab47bc },
+  { text: 'the',  id: '253',  color: 0x66bb6a },
+];
+
+const s2Cubes = [];
+const s2Labels = [];
+const tokenSpacing = 3.5;
+const tokenStartX = -(TOKEN_DATA.length - 1) * tokenSpacing / 2;
+
+TOKEN_DATA.forEach((tok, i) => {
+  const x = tokenStartX + i * tokenSpacing;
+
+  // Cube
+  const mat = new THREE.MeshStandardMaterial({
+    color: tok.color, emissive: tok.color, emissiveIntensity: 0.3, roughness: 0.3, metalness: 0.1
+  });
+  const cube = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), mat);
+  cube.position.set(x, 0, 0);
+  // Glow
+  cube.add(new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.7, 1.7),
+    new THREE.MeshBasicMaterial({ color: tok.color, transparent: true, opacity: 0.08 })));
+  s2Group.add(cube);
+  s2Cubes.push(cube);
+
+  // Token text label
+  const lbl = makeTextSprite(`"${tok.text}"`, tok.color, 24, 0.8);
+  lbl.scale.set(3.0, 0.45, 1);
+  lbl.position.set(x, 1.6, 0);
+  s2Group.add(lbl);
+  s2Labels.push(lbl);
+
+  // ID label below
+  const idLbl = makeTextSprite(`ID: ${tok.id}`, 0x888888, 18, 0.55);
+  idLbl.scale.set(2.5, 0.4, 1);
+  idLbl.position.set(x, -1.5, 0);
+  s2Group.add(idLbl);
+});
+
+const s2Header = makeTextSprite('Tokeniser', 0xffb74d, 22, 0.65);
+s2Header.scale.set(3.5, 0.52, 1);
+s2Header.position.set(0, 3.2, 0);
+s2Group.add(s2Header);
+
+// ---- Stage 3: Embedding ----
+const s3Group = new THREE.Group();
+stageGroup.add(s3Group);
+
+// Embedding positions in 3D space — meaningful clustering
+const embedPositions = [
+  new THREE.Vector3(-5, 1.5, 1),
+  new THREE.Vector3(-2.5, -1, 2.5),
+  new THREE.Vector3(0.5, 0.5, -1),
+  new THREE.Vector3(3, 2, 0.5),
+  new THREE.Vector3(5.5, -0.5, -1.5),
+];
+
+const s3Spheres = [];
+const s3Labels = [];
+
+TOKEN_DATA.forEach((tok, i) => {
+  const sp = makeSphere(0.45, tok.color, 0.45, 1.8);
+  sp.position.copy(embedPositions[i]);
+  s3Group.add(sp);
+  s3Spheres.push(sp);
+
+  const lbl = makeTextSprite(`"${tok.text}"`, tok.color, 24, 0.78);
+  lbl.scale.set(3.0, 0.45, 1);
+  lbl.position.set(embedPositions[i].x, embedPositions[i].y + 1.1, embedPositions[i].z);
+  s3Group.add(lbl);
+  s3Labels.push(lbl);
+});
+
+// Sequence connection line
+for (let i = 0; i < embedPositions.length - 1; i++) {
+  s3Group.add(makeLine(embedPositions[i], embedPositions[i + 1], 0x888888, 0.35));
+}
+
+// Dimension axes
+[[1,0,0, 0x42a5f5, 'dim 1'], [0,1,0, 0x66bb6a, 'dim 2'], [0,0,1, 0xab47bc, 'dim 3']].forEach(([x,y,z,col,lbl]) => {
+  const dir = new THREE.Vector3(x,y,z);
+  s3Group.add(makeLine(dir.clone().multiplyScalar(-5), dir.clone().multiplyScalar(5), col, 0.18));
+  const sprite = makeTextSprite(lbl, col, 18, 0.5);
+  sprite.scale.set(2.5, 0.38, 1);
+  sprite.position.copy(dir.clone().multiplyScalar(6));
+  s3Group.add(sprite);
+});
+
+const s3Header = makeTextSprite('Embedding Space', 0x42a5f5, 22, 0.65);
+s3Header.scale.set(3.8, 0.52, 1);
+s3Header.position.set(0, 4.5, 0);
+s3Group.add(s3Header);
+
+// ---- Stage 4: Transformer Layers ----
+const s4Group = new THREE.Group();
+stageGroup.add(s4Group);
+
+const NUM_LAYERS = 7;
+const LAYER_SPACING = 2.0;
+const LAYER_Y_START = -6;
+
+// Layer planes
+const s4LayerPlanes = [];
+for (let i = 0; i < NUM_LAYERS; i++) {
+  const geo = new THREE.PlaneGeometry(9, 0.12);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x6644aa, transparent: true, opacity: 0.12, side: THREE.DoubleSide });
+  const plane = new THREE.Mesh(geo, mat);
+  plane.position.y = LAYER_Y_START + i * LAYER_SPACING;
+  plane.rotation.x = Math.PI / 2;
+  s4Group.add(plane);
+  s4LayerPlanes.push({ mesh: plane, mat });
+
+  // Layer label on first and last
+  if (i === 0 || i === NUM_LAYERS - 1) {
+    const lbl = makeTextSprite(i === 0 ? 'Layer 1' : `Layer ${NUM_LAYERS}`, 0x9966dd, 18, 0.5);
+    lbl.scale.set(2.8, 0.4, 1);
+    lbl.position.set(6, plane.position.y, 0);
+    s4Group.add(lbl);
+  }
+}
+
+// Token spheres that travel through layers
+const s4Spheres = [];
+TOKEN_DATA.slice(0, 3).forEach((tok, i) => {
+  const sp = makeSphere(0.38, tok.color, 0.4, 1.7);
+  s4Group.add(sp);
+  const lbl = makeTextSprite(`"${tok.text}"`, tok.color, 20, 0.7);
+  lbl.scale.set(2.8, 0.42, 1);
+  s4Group.add(lbl);
+  s4Spheres.push({ mesh: sp, lbl, idx: i, color: tok.color, xOff: (i - 1) * 2.2 });
+});
+
+// Attention lines
+const s4AttnLines = [];
+for (let layer = 0; layer < NUM_LAYERS; layer++) {
+  for (let a = 0; a < 2; a++) {
+    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-2.2, 0, 0), new THREE.Vector3(2.2, 0, 0)]);
+    const mat = new THREE.LineBasicMaterial({ color: 0xff6644, transparent: true, opacity: 0 });
+    const line = new THREE.Line(geo, mat);
+    line.position.y = LAYER_Y_START + layer * LAYER_SPACING;
+    s4Group.add(line);
+    s4AttnLines.push({ line, mat, layer });
+  }
+}
+
+const s4Header = makeTextSprite('Transformer Layers', 0xab47bc, 22, 0.65);
+s4Header.scale.set(4, 0.52, 1);
+s4Header.position.set(0, LAYER_Y_START + NUM_LAYERS * LAYER_SPACING + 0.5, 0);
+s4Group.add(s4Header);
+
+// ---- Stage 5: Softmax ----
+const s5Group = new THREE.Group();
+stageGroup.add(s5Group);
+
+// Final "beacon" — the last token's representation
+const s5Beacon = makeSphere(0.65, 0xef5350, 0.65, 2.1);
+s5Beacon.position.set(0, 1.5, 0);
+s5Group.add(s5Beacon);
+
+const s5BeaconLabel = makeTextSprite('final token repr.', 0xef5350, 22, 0.72);
+s5BeaconLabel.scale.set(4, 0.52, 1);
+s5BeaconLabel.position.set(0, 3.2, 0);
+s5Group.add(s5BeaconLabel);
+
+// Candidate tokens as probability cloud
+const CANDIDATES = [
+  { word: '"sat"',    prob: 0.41, pos: new THREE.Vector3(0, 5.5, 0),     color: 0x66bb6a },
+  { word: '"lay"',    prob: 0.18, pos: new THREE.Vector3(2.8, 4.8, 1),   color: 0x78909c },
+  { word: '"stood"',  prob: 0.11, pos: new THREE.Vector3(-2.5, 5.2, -0.5), color: 0x78909c },
+  { word: '"crept"',  prob: 0.07, pos: new THREE.Vector3(1.5, 6.0, -1.5),  color: 0x78909c },
+  { word: '"slept"',  prob: 0.05, pos: new THREE.Vector3(-1.5, 5.8, 1.2),  color: 0x78909c },
+  { word: '"rested"', prob: 0.04, pos: new THREE.Vector3(3.2, 5.5, -0.5),  color: 0x78909c },
+];
+
+const s5CandMeshes = [];
+const s5CandLabels = [];
+
+CANDIDATES.forEach(c => {
+  const r = 0.14 + c.prob * 0.85;
+  const isTop = c.word === '"sat"';
+  const sp = makeSphere(r, c.color, isTop ? 0.7 : 0.2, isTop ? 2.0 : 1.4);
+  sp.position.copy(c.pos);
+  s5Group.add(sp);
+  s5CandMeshes.push({ mesh: sp, c, isTop });
+
+  // Connection line to beacon
+  s5Group.add(makeLine(new THREE.Vector3(0, 1.5, 0), c.pos.clone(), c.color, isTop ? 0.4 : 0.1));
+
+  const probStr = `${c.word} ${Math.round(c.prob * 100)}%`;
+  const lbl = makeTextSprite(probStr, isTop ? 0x66bb6a : 0x888888, isTop ? 24 : 18, 0.65);
+  lbl.scale.set(isTop ? 3.5 : 2.8, isTop ? 0.48 : 0.38, 1);
+  lbl.position.set(c.pos.x, c.pos.y + r + 0.65, c.pos.z);
+  s5Group.add(lbl);
+  s5CandLabels.push(lbl);
+});
+
+const s5SoftmaxLabel = makeTextSprite('Softmax → probability distribution', 0x888888, 20, 0.6);
+s5SoftmaxLabel.scale.set(5.5, 0.48, 1);
+s5SoftmaxLabel.position.set(0, -1.5, 0);
+s5Group.add(s5SoftmaxLabel);
+
+// ---- Stage 6: The Complete Loop ----
+const s6Group = new THREE.Group();
+stageGroup.add(s6Group);
+
+// Five pipeline blocks laid out horizontally
+const BLOCKS = [
+  { label: 'Tokeniser',   color: 0xffb74d, x: -8  },
+  { label: 'Embedder',    color: 0x42a5f5, x: -4  },
+  { label: 'Transformer', color: 0xab47bc, x:  0  },
+  { label: 'Output Head', color: 0x66bb6a, x:  4  },
+  { label: 'Sampler',     color: 0xef5350, x:  8  },
+];
+
+const s6BlockGroups = [];
+BLOCKS.forEach(({ label, color, x }) => {
+  const box = makeBox(2.5, 1.8, 2.5, color, 0.12);
+  box.position.set(x, 0, 0);
+  s6Group.add(box);
+  s6BlockGroups.push({ box, color, x });
+
+  const lbl = makeTextSprite(label, color, 20, 0.7);
+  lbl.scale.set(3.2, 0.48, 1);
+  lbl.position.set(x, -1.8, 0);
+  s6Group.add(lbl);
+
+  // Connection arrows between blocks
+  if (x < 8) {
+    const arrowGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x + 1.3, 0, 0),
+      new THREE.Vector3(x + 2.7, 0, 0),
+    ]);
+    const arrowMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5 });
+    s6Group.add(new THREE.Line(arrowGeo, arrowMat));
+  }
+});
+
+// Token spheres flowing through the pipeline
+const s6FlowSpheres = [];
+TOKEN_DATA.slice(0, 3).forEach((tok, i) => {
+  const sp = makeSphere(0.25, tok.color, 0.5, 1.8);
+  sp.position.set(BLOCKS[0].x, 0, 0);
+  s6Group.add(sp);
+  s6FlowSpheres.push({ mesh: sp, color: tok.color, offset: i * 0.3 });
+});
+
+// Feedback arc — from sampler back to tokeniser (below)
+const fbPoints = [];
+for (let i = 0; i <= 40; i++) {
+  const t = i / 40;
+  const x = -8 + t * 16;
+  // Semicircular arc below y=0
+  const y = -4.5 - Math.sin(t * Math.PI) * 2.0;
+  fbPoints.push(new THREE.Vector3(x, y, 0));
+}
+const fbGeo = new THREE.BufferGeometry().setFromPoints(fbPoints);
+const fbMat = new THREE.LineBasicMaterial({ color: 0xef5350, transparent: true, opacity: 0.45 });
+const fbLine = new THREE.Line(fbGeo, fbMat);
+s6Group.add(fbLine);
+
+// Arrowhead at feedback start (pointing toward tokeniser)
+const fbArrow = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.5, 8),
+  new THREE.MeshBasicMaterial({ color: 0xef5350, transparent: true, opacity: 0.6 }));
+fbArrow.position.set(-8, -4.5, 0);
+fbArrow.rotation.z = Math.PI / 2;
+s6Group.add(fbArrow);
+
+// Labels for the loop
+const s6FeedbackLabel = makeTextSprite('feed back in — repeat', 0xef5350, 22, 0.7);
+s6FeedbackLabel.scale.set(4.5, 0.52, 1);
+s6FeedbackLabel.position.set(0, -7.5, 0);
+s6Group.add(s6FeedbackLabel);
+
+const s6LoopLabel = makeTextSprite('one forward pass per token', 0x888888, 20, 0.55);
+s6LoopLabel.scale.set(5, 0.48, 1);
+s6LoopLabel.position.set(0, 2.8, 0);
+s6Group.add(s6LoopLabel);
+
+/* ================================================================
+   STAGE CONFIG + VISIBILITY
+   ================================================================ */
+
+const stageConfigs = [
+  { camera: { x: 0,  y: 2,  z: 14 }, target: { x: 0, y: 1, z: 0 },  autoRotate: false },
+  { camera: { x: 0,  y: 3,  z: 20 }, target: { x: 0, y: 0, z: 0 },  autoRotate: false },
+  { camera: { x: 6,  y: 5,  z: 14 }, target: { x: 0, y: 0.5, z: 0 },autoRotate: true  },
+  { camera: { x: 7,  y: 4,  z: 18 }, target: { x: 0, y: 1, z: 0 },  autoRotate: false },
+  { camera: { x: 5,  y: 5,  z: 12 }, target: { x: 0, y: 3, z: 0 },  autoRotate: true  },
+  { camera: { x: 0,  y: 6,  z: 22 }, target: { x: 0, y: -2, z: 0 }, autoRotate: true  },
+];
+
+const stageGroups = [s1Group, s2Group, s3Group, s4Group, s5Group, s6Group];
+
+function setStageVisibility(idx) {
+  stageGroups.forEach((g, i) => { g.visible = i === idx; });
+}
+
+/* ================================================================
+   STAGE MANAGEMENT + NAV
+   ================================================================ */
+
+let currentStage = 0;
+let stageStartTime = 0;
+const cameraTarget   = new THREE.Vector3(0, 2, 14);
+const controlsTarget = new THREE.Vector3(0, 1, 0);
+
+const narrativeContent  = document.getElementById('narrative-content');
+const btnPrev           = document.getElementById('btn-prev');
+const btnNext           = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(idx) {
+  const s = STAGES[idx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>`;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(idx) {
+  progressContainer.querySelectorAll('.dot').forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === idx) d.classList.add('active');
+    else if (i < idx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(idx) {
+  btnPrev.disabled = idx === 0;
+  btnNext.disabled = idx === STAGES.length - 1;
+  btnNext.innerHTML = idx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  const cfg = stageConfigs[idx];
+  cameraTarget.set(cfg.camera.x, cfg.camera.y, cfg.camera.z);
+  controlsTarget.set(cfg.target.x, cfg.target.y, cfg.target.z);
+  setStageVisibility(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+  stageStartTime = clock.getElapsedTime();
+}
+
+setStageVisibility(0); updateNarrative(0); updateProgress(0); updateButtons(0);
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goToStage(currentStage + 1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); goToStage(currentStage - 1); }
+});
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth, h = vizPanel.clientHeight;
+  camera3D.aspect = w / h; camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ================================================================
+   RENDER LOOP
+   ================================================================ */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt  = Math.min(clock.getDelta(), 0.05);
+  const t   = clock.getElapsedTime();
+  const stT = t - stageStartTime;
+  const ls  = 2.5 * dt;
+
+  camera3D.position.lerp(cameraTarget, ls * 0.7);
+  controls.target.lerp(controlsTarget, ls * 0.7);
+  controls.autoRotate = stageConfigs[currentStage].autoRotate;
+  gridHelper.rotation.y = t * 0.015;
+
+  if (currentStage === 0) {
+    // Text fades in, cursor blinks
+    s1PromptSprite.material.opacity = Math.min(stT / 1.2, 1);
+    s1Cursor.material.opacity = Math.sin(t * 4) > 0 ? 0.9 : 0;
+    s1Arrow.material.opacity = Math.min(Math.max(stT - 1.0, 0) / 0.6, 0.7) * (0.7 + Math.sin(t * 3) * 0.2);
+    s1Arrow.position.y = -1.5 + Math.sin(t * 3) * 0.1;
+  }
+
+  if (currentStage === 1) {
+    // Cubes appear with stagger and gently rotate
+    s2Cubes.forEach((cube, i) => {
+      const delay = i * 0.3;
+      const sc = Math.min(Math.max(stT - delay, 0) / 0.5, 1);
+      cube.scale.setScalar(sc);
+      cube.rotation.x = t * 0.35 + i * 1.2;
+      cube.rotation.y = t * 0.55 + i * 0.7;
+      cube.position.y = Math.sin(t * 1.3 + i * 1.8) * 0.12;
+      cube.children[0].material.opacity = 0.05 + Math.sin(t * 2.5 + i) * 0.03;
+    });
+    s2Labels.forEach((lbl, i) => {
+      lbl.material.opacity = Math.min(Math.max(stT - i * 0.3 - 0.2, 0) / 0.4, 1);
+    });
+  }
+
+  if (currentStage === 2) {
+    // Embedding spheres float gently in 3D space
+    s3Spheres.forEach((sp, i) => {
+      sp.position.x = embedPositions[i].x + Math.sin(t * 0.7 + i * 1.4) * 0.15;
+      sp.position.y = embedPositions[i].y + Math.sin(t * 0.9 + i * 1.9) * 0.18;
+      sp.position.z = embedPositions[i].z + Math.cos(t * 0.6 + i * 1.2) * 0.15;
+      s3Labels[i].position.set(sp.position.x, sp.position.y + 1.1, sp.position.z);
+      sp.children[0].material.opacity = 0.07 + Math.sin(t * 2 + i * 1.3) * 0.04;
+    });
+  }
+
+  if (currentStage === 3) {
+    // Token spheres travel through layers
+    const cycleLen = 5.5;
+    const prog = (stT % cycleLen) / cycleLen;
+    const totalH = (NUM_LAYERS - 1) * LAYER_SPACING;
+
+    s4Spheres.forEach(({ mesh, lbl, xOff }) => {
+      const yPos = LAYER_Y_START + prog * totalH;
+      const wobble = Math.sin(prog * Math.PI * NUM_LAYERS) * 0.25;
+      mesh.position.set(xOff + wobble, yPos, 0);
+      lbl.position.set(mesh.position.x, mesh.position.y + 0.85, 0);
+      mesh.children[0].material.opacity = 0.07 + Math.sin(t * 3) * 0.04;
+    });
+
+    // Attention lines flash as spheres pass through layers
+    s4AttnLines.forEach(({ line, mat, layer }) => {
+      const layerY = LAYER_Y_START + layer * LAYER_SPACING;
+      const sphereY = LAYER_Y_START + prog * totalH;
+      const dist = Math.abs(sphereY - layerY);
+      const intensity = Math.max(0, 1 - dist / 1.2);
+      mat.opacity = intensity * 0.65;
+      mat.color.setHex(intensity > 0.4 ? 0xff6644 : 0x664422);
+    });
+
+    // Layer planes pulse
+    s4LayerPlanes.forEach(({ mesh, mat }, layer) => {
+      const layerY = LAYER_Y_START + layer * LAYER_SPACING;
+      const sphereY = LAYER_Y_START + prog * totalH;
+      const dist = Math.abs(sphereY - layerY);
+      const intensity = Math.max(0, 1 - dist / 1.2);
+      mat.opacity = 0.08 + intensity * 0.25;
+    });
+  }
+
+  if (currentStage === 4) {
+    // Beacon pulses, candidates float
+    const pulse = 0.92 + Math.sin(t * 3.2) * 0.13;
+    s5Beacon.scale.setScalar(pulse);
+    s5Beacon.material.emissiveIntensity = 0.45 + Math.sin(t * 3) * 0.2;
+    s5Beacon.children[0].material.opacity = 0.08 + Math.sin(t * 2.5) * 0.04;
+
+    s5CandMeshes.forEach(({ mesh, c, isTop }, i) => {
+      mesh.position.x = c.pos.x + Math.sin(t * 0.7 + i * 2.1) * 0.18;
+      mesh.position.y = c.pos.y + Math.sin(t * 0.9 + i * 1.6) * 0.14;
+      mesh.position.z = c.pos.z + Math.cos(t * 0.6 + i * 1.3) * 0.14;
+      s5CandLabels[i].position.set(mesh.position.x, mesh.position.y + (0.14 + c.prob * 0.85) + 0.65, mesh.position.z);
+      if (isTop) {
+        mesh.scale.setScalar(1.0 + Math.sin(t * 4) * 0.15);
+        mesh.material.emissiveIntensity = 0.55 + Math.sin(t * 4) * 0.25;
+      }
+    });
+  }
+
+  if (currentStage === 5) {
+    // Block boxes pulse in turn
+    const blockPeriod = 2.5;
+    s6BlockGroups.forEach(({ box, color, x }, i) => {
+      const phase = (t / blockPeriod + i / BLOCKS.length) % 1;
+      const intensity = Math.pow(Math.sin(phase * Math.PI), 3);
+      const boxMesh = box.children[0];
+      const edges   = box.children[1];
+      if (boxMesh.material) boxMesh.material.opacity = 0.08 + intensity * 0.2;
+      if (edges.material)   edges.material.opacity   = 0.35 + intensity * 0.45;
+    });
+
+    // Flow spheres travel left to right through the pipeline
+    s6FlowSpheres.forEach(({ mesh, offset }, i) => {
+      const speed = 0.12;
+      const prog = ((t * speed + offset) % 1);
+      // Travel from x=-8 to x=8 then loop
+      mesh.position.x = -8 + prog * 16;
+      mesh.position.y = Math.sin(prog * Math.PI * 3) * 0.3;
+      mesh.children[0].material.opacity = 0.07 + Math.sin(t * 3 + i) * 0.04;
+    });
+
+    // Feedback arc pulses
+    fbMat.opacity = 0.3 + Math.sin(t * 2) * 0.15;
+    fbArrow.material.opacity = 0.5 + Math.sin(t * 2.5) * 0.2;
+    fbArrow.position.x = -8 + Math.sin(t * 0.5) * 0.2;
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+</script>
+</body>
+</html>
