@@ -86,9 +86,15 @@
     top: 1rem;
     left: 2.5rem;
     display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    z-index: 20;
+  }
+
+  .branding-row {
+    display: flex;
     align-items: center;
     gap: 0.6rem;
-    z-index: 20;
   }
 
   .branding-name {
@@ -96,6 +102,13 @@
     font-weight: 600;
     color: #666;
     letter-spacing: 0.04em;
+  }
+
+  .branding-title {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #999;
+    letter-spacing: 0.02em;
   }
 
   .branding-links {
@@ -196,8 +209,9 @@
 
 <div id="narrative-panel">
   <div class="branding">
-    <span class="branding-name">dwmkerr</span>
-    <div class="branding-links">
+    <div class="branding-row">
+      <span class="branding-name">dwmkerr</span>
+      <div class="branding-links">
       <a href="https://linkedin.com/in/dwmkerr" target="_blank" rel="noopener" title="LinkedIn">
         <svg viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
       </a>
@@ -208,6 +222,8 @@
         <svg viewBox="0 0 24 24"><path d="M22.539 8.242H1.46V5.406h21.08v2.836zM1.46 10.812V24L12 18.11 22.54 24V10.812H1.46zM22.54 0H1.46v2.836h21.08V0z"/></svg>
       </a>
     </div>
+    </div>
+    <span class="branding-title">LLMs Visualised</span>
   </div>
   <div id="narrative-content"></div>
   <div id="nav-bar">
@@ -294,8 +310,8 @@ const STAGES = [
     label: 'Stage 1 of 7',
     title: 'What is a Large Language Model?',
     body: `<p>A large language model is a mathematical model that expresses relationships between words.</p>
-           <p>Understanding how words relate to each other is what underpins modern AI &mdash; it's what lets us answer questions, generate text, and reason about language.</p>
-           <p>But how does a model <strong>understand meaning</strong>?</p>`,
+           <p>If we understand how words relate to each other, we can answer questions, generate text, and reason about language.</p>
+           <p>But how do models <strong>understand meaning</strong>?</p>`,
     getPositions: () => SCATTERED_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
     camera: { x: 0, y: 2, z: 28 },
     target: { x: 0, y: 0, z: 0 },
@@ -305,8 +321,7 @@ const STAGES = [
   {
     label: 'Stage 2 of 7',
     title: 'Turning words into numbers',
-    body: `<p>To compute with words, we need numbers. We need to turn words into numbers &mdash; and relationships between words into numbers.</p>
-           <p>How do we do that? Let's start with five words.</p>`,
+    body: `<p>To do any kind of mathematics with words, or build relationships between them, we need to turn them into numbers &mdash; because we can do mathematics on numbers.</p>`,
     getPositions: () => CLUSTER_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
     camera: { x: 0, y: 1, z: 20 },
     target: { x: 0, y: 0, z: 0 },
@@ -318,7 +333,7 @@ const STAGES = [
     title: 'Five words',
     body: `<p>Here are five words: ${WORDS.map(w => tag(w)).join(', ')}.</p>
            <p>Right now there's no mathematical relationship between them. They could be in any order.</p>
-           <p>We want to start creating some. Let's see how.</p>`,
+           <p>Where do we go from here?</p>`,
     getPositions: () => WORDS.map((w, i) => ({
       x: JUMBLED_X[i] - 4.5,
       y: 0,
@@ -330,7 +345,7 @@ const STAGES = [
   },
   {
     label: 'Stage 4 of 7',
-    title: "Dimension 1: How 'Animal' is it?",
+    title: "How 'Animal' is it?",
     body: `<p>Let's create a dimension &mdash; something we score each word on. Our first: how strongly each word relates to <strong>animals</strong>.</p>
            <p>${tag(WORDS[2])} scores highest &mdash; it's the most animal-like word. ${tag(WORDS[0])} and ${tag(WORDS[1])} are close behind &mdash; they're animals too, even if we also eat them.</p>
            <p>${tag(WORDS[3])} and ${tag(WORDS[4])} score low &mdash; neither has much to do with animals.</p>
@@ -346,7 +361,7 @@ const STAGES = [
   },
   {
     label: 'Stage 5 of 7',
-    title: "Dimension 2: How 'Food' is it?",
+    title: "How 'Food' is it?",
     body: `<p>Now we add a second dimension: how strongly each word relates to <strong>food</strong>.</p>
            <p>${tag(WORDS[0])} and ${tag(WORDS[1])} rise high &mdash; both are common foods. ${tag(WORDS[4])} also rises &mdash; a cookbook is all about food.</p>
            <p>${tag(WORDS[2])} drops low on the food axis &mdash; dogs aren't food (usually). And ${tag(WORDS[3])} stays at the bottom.</p>
@@ -362,7 +377,7 @@ const STAGES = [
   },
   {
     label: 'Stage 6 of 7',
-    title: "Dimension 3: How 'Abstract' is it?",
+    title: "How 'Abstract' is it?",
     body: `<p>The third dimension captures <strong>abstractness</strong> &mdash; is the word a concrete, physical thing, or an abstract concept?</p>
            <p>${tag(WORDS[3])} leaps forward &mdash; it's the only truly abstract word here. ${tag(WORDS[4])} moves slightly &mdash; it's a physical object but represents knowledge.</p>
            <p>The rest &mdash; ${tag(WORDS[0])}, ${tag(WORDS[1])}, ${tag(WORDS[2])} &mdash; stay near the back. They're all concrete, tangible things.</p>
@@ -379,10 +394,10 @@ const STAGES = [
   {
     label: 'Stage 7 of 7',
     title: 'More dimensions, richer meaning',
-    body: `<p>Real language models use <strong>768 to 12,288 dimensions</strong> &mdash; not just three. GPT-3, for example, uses 12,288. Each dimension captures a different facet of meaning: sentiment, formality, temporality, and countless others.</p>
-           <p>In this space, words with similar meanings land near each other. ${tag(WORDS[0])} and ${tag(WORDS[1])} are close &mdash; both are edible animals. ${tag(WORDS[3])} is far from everything else.</p>
-           <p>How does a model pick these dimensions and score words on them? It guesses &mdash; then checks how well the guesses fit the data. That's essentially what <strong>training</strong> is. We'll come back to that.</p>
-           <p>And real models don't use whole words &mdash; they use <em>tokens</em>, pieces of words. That's what we'll explore next.</p>`,
+    body: `<p>Real language models use <strong>thousands of dimensions</strong> &mdash; not just three. Llama 3, for example, uses 16,384. Each dimension captures a different facet of meaning: sentiment, formality, temporality, and countless others.</p>
+           <p>This is the foundational idea behind a large language model &mdash; creating a conceptual space that relates words to each other based on meaning.</p>
+           <p>How do we pick these dimensions and score words on them? We guess &mdash; then check how well the guesses fit the data. That's essentially what <strong>training</strong> is. We'll come back to that.</p>
+           <p>And real models don't use whole words &mdash; they use <em>tokens</em>, pieces of words. How we build these dimensions and work with the words, we'll come to next.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
       y: w.food - 5,
