@@ -309,7 +309,7 @@ const STAGES = [
   {
     label: 'Stage 1 of 7',
     title: 'What is a Large Language Model?',
-    body: `<p>A large language model is a mathematical model that expresses relationships between words.</p>
+    body: `<p>It's a mathematical model that expresses relationships between words.</p>
            <p>If we understand how words relate to each other, we can answer questions, generate text, and reason about language.</p>
            <p>But how do models <strong>understand meaning</strong>?</p>`,
     getPositions: () => SCATTERED_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
@@ -321,7 +321,7 @@ const STAGES = [
   {
     label: 'Stage 2 of 7',
     title: 'Turning words into numbers',
-    body: `<p>To do any kind of mathematics with words, or build relationships between them, we need to turn them into numbers &mdash; because we can do mathematics on numbers.</p>`,
+    body: `<p>If we turn words into numbers, we can start to do mathematics with them -- calculate how similar they are, find relationships, measure meaning.</p>`,
     getPositions: () => CLUSTER_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
     camera: { x: 0, y: 1, z: 20 },
     target: { x: 0, y: 0, z: 0 },
@@ -346,9 +346,9 @@ const STAGES = [
   {
     label: 'Stage 4 of 7',
     title: "How 'Animal' is it?",
-    body: `<p>Let's create a dimension &mdash; something we score each word on. Our first: how strongly each word relates to <strong>animals</strong>.</p>
-           <p>${tag(WORDS[2])} scores highest &mdash; it's the most animal-like word. ${tag(WORDS[0])} and ${tag(WORDS[1])} are close behind &mdash; they're animals too, even if we also eat them.</p>
-           <p>${tag(WORDS[3])} and ${tag(WORDS[4])} score low &mdash; neither has much to do with animals.</p>
+    body: `<p>Let's create a dimension -- something we score each word on. Our first: how strongly each word relates to <strong>animals</strong>.</p>
+           <p>${tag(WORDS[2])} scores highest -- it's the most animal-like word. ${tag(WORDS[0])} and ${tag(WORDS[1])} are close behind -- they're animals too, even if we also eat them.</p>
+           <p>${tag(WORDS[3])} and ${tag(WORDS[4])} score low -- neither has much to do with animals.</p>
            <p>Already, a pattern emerges: the <em>animal words</em> cluster to the right.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
@@ -363,9 +363,9 @@ const STAGES = [
     label: 'Stage 5 of 7',
     title: "How 'Food' is it?",
     body: `<p>Now we add a second dimension: how strongly each word relates to <strong>food</strong>.</p>
-           <p>${tag(WORDS[0])} and ${tag(WORDS[1])} rise high &mdash; both are common foods. ${tag(WORDS[4])} also rises &mdash; a cookbook is all about food.</p>
-           <p>${tag(WORDS[2])} drops low on the food axis &mdash; dogs aren't food (usually). And ${tag(WORDS[3])} stays at the bottom.</p>
-           <p>Notice how ${tag(WORDS[0])} and ${tag(WORDS[4])} are now near each other &mdash; both score high on food, though for different reasons.</p>`,
+           <p>${tag(WORDS[0])} and ${tag(WORDS[1])} rise high -- both are common foods. ${tag(WORDS[4])} also rises -- a cookbook is all about food.</p>
+           <p>${tag(WORDS[2])} drops low on the food axis -- dogs aren't food (usually). And ${tag(WORDS[3])} stays at the bottom.</p>
+           <p>Notice how ${tag(WORDS[0])} and ${tag(WORDS[4])} are now near each other -- both score high on food, though for different reasons.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
       y: w.food - 5,
@@ -378,10 +378,11 @@ const STAGES = [
   {
     label: 'Stage 6 of 7',
     title: "How 'Abstract' is it?",
-    body: `<p>The third dimension captures <strong>abstractness</strong> &mdash; is the word a concrete, physical thing, or an abstract concept?</p>
-           <p>${tag(WORDS[3])} leaps forward &mdash; it's the only truly abstract word here. ${tag(WORDS[4])} moves slightly &mdash; it's a physical object but represents knowledge.</p>
-           <p>The rest &mdash; ${tag(WORDS[0])}, ${tag(WORDS[1])}, ${tag(WORDS[2])} &mdash; stay near the back. They're all concrete, tangible things.</p>
-           <p>${tag(WORDS[3])} is now clearly <em>separated</em> from every other word. Three dimensions reveal what one could not.</p>`,
+    body: `<p>The third dimension captures <strong>abstractness</strong> -- is the word a concrete, physical thing, or an abstract concept?</p>
+           <p>${tag(WORDS[3])} leaps forward -- it's the only truly abstract word here. ${tag(WORDS[4])} moves slightly -- it's a physical object but represents knowledge.</p>
+           <p>The rest -- ${tag(WORDS[0])}, ${tag(WORDS[1])}, ${tag(WORDS[2])} -- stay near the back. They're all concrete, tangible things.</p>
+           <p>${tag(WORDS[3])} is now clearly <em>separated</em> from every other word. Three dimensions reveal what one could not.</p>
+           <p>How do we pick these dimensions? We'll talk about that later -- but essentially we just guess, then do some mathematics to see how good our guess was.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
       y: w.food - 5,
@@ -394,10 +395,9 @@ const STAGES = [
   {
     label: 'Stage 7 of 7',
     title: 'More dimensions, richer meaning',
-    body: `<p>Real language models use <strong>thousands of dimensions</strong> &mdash; not just three. Llama 3, for example, uses 16,384. Each dimension captures a different facet of meaning: sentiment, formality, temporality, and countless others.</p>
-           <p>This is the foundational idea behind a large language model &mdash; creating a conceptual space that relates words to each other based on meaning.</p>
-           <p>How do we pick these dimensions and score words on them? We guess &mdash; then check how well the guesses fit the data. That's essentially what <strong>training</strong> is. We'll come back to that.</p>
-           <p>And real models don't use whole words &mdash; they use <em>tokens</em>, pieces of words. How we build these dimensions and work with the words, we'll come to next.</p>`,
+    body: `<p>Real language models use <strong>thousands of dimensions</strong> -- not just three. Llama 3, for example, uses 16,384. Each dimension captures a different facet of meaning: sentiment, formality, temporality, and countless others.</p>
+           <p>This is the foundational idea behind a large language model -- creating a conceptual space that relates words to each other based on meaning.</p>
+           <p>And real models don't use whole words -- they use <em>tokens</em>, pieces of words. How we build these dimensions and work with the words, we'll come to next.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
       y: w.food - 5,
