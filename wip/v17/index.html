@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Filtering the Noise: Top-k and Top-p</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .highlight {
+    display: inline;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+  }
+
+  .hl-topk   { background: rgba(66,165,245,0.15); color: #1565c0; }
+  .hl-topp   { background: rgba(171,71,188,0.15); color: #7b1fa2; }
+  .hl-good   { background: rgba(102,187,106,0.15); color: #2e7d32; }
+  .hl-bad    { background: rgba(239,83,80,0.15);  color: #c62828; }
+  .hl-temp   { background: rgba(255,183,77,0.15); color: #e68a00; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   CANDIDATE WORD DATA
+   =================================================================== */
+
+// Each candidate word has a probability, a label, and whether it's "good" or "bad"
+const CANDIDATES = [
+  // Good candidates (high probability, sensible)
+  { word: 'the',      prob: 0.25, good: true,  color: 0x66bb6a },
+  { word: 'a',        prob: 0.15, good: true,  color: 0x4caf50 },
+  { word: 'this',     prob: 0.10, good: true,  color: 0x81c784 },
+  { word: 'my',       prob: 0.07, good: true,  color: 0xa5d6a7 },
+  { word: 'his',      prob: 0.05, good: true,  color: 0x43a047 },
+  // Decent candidates (medium probability)
+  { word: 'their',    prob: 0.035, good: true,  color: 0x7cb342 },
+  { word: 'our',      prob: 0.025, good: true,  color: 0x9ccc65 },
+  { word: 'her',      prob: 0.020, good: true,  color: 0x8bc34a },
+  { word: 'every',    prob: 0.015, good: false, color: 0xbdbdbd },
+  { word: 'another',  prob: 0.012, good: false, color: 0xb0b0b0 },
+  // Bad candidates (low probability, nonsensical)
+  { word: 'purple',   prob: 0.008, good: false, color: 0x9e9e9e },
+  { word: 'quickly',  prob: 0.006, good: false, color: 0x8a8a8a },
+  { word: 'banana',   prob: 0.004, good: false, color: 0x787878 },
+  { word: 'seven',    prob: 0.003, good: false, color: 0x6e6e6e },
+  { word: 'because',  prob: 0.003, good: false, color: 0x636363 },
+  { word: 'under',    prob: 0.002, good: false, color: 0x585858 },
+  { word: 'fish',     prob: 0.002, good: false, color: 0x505050 },
+  { word: 'very',     prob: 0.001, good: false, color: 0x484848 },
+];
+
+// Stable 3D positions for each candidate, seeded deterministically
+function seedPositions() {
+  const positions = [];
+  const rng = mulberry32(42);
+  for (let i = 0; i < CANDIDATES.length; i++) {
+    const theta = rng() * Math.PI * 2;
+    const phi = rng() * Math.PI - Math.PI / 2;
+    const r = 3 + rng() * 5;
+    positions.push({
+      x: r * Math.cos(phi) * Math.cos(theta),
+      y: r * Math.cos(phi) * Math.sin(theta),
+      z: r * Math.sin(phi),
+    });
+  }
+  return positions;
+}
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const SCATTER_POS = seedPositions();
+
+// Sorted by probability (descending) for pipeline stages
+const SORTED_INDICES = CANDIDATES.map((_, i) => i)
+  .sort((a, b) => CANDIDATES[b].prob - CANDIDATES[a].prob);
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'Too many possibilities',
+    body: `<p>After processing a prompt like <strong>"The cat sat on ___"</strong>, the model assigns a probability to every word in its vocabulary &mdash; tens of thousands of candidates.</p>
+           <p>Most are terrible. <span class="highlight hl-bad">"banana"</span>, <span class="highlight hl-bad">"seven"</span>, <span class="highlight hl-bad">"purple"</span> &mdash; all technically possible, but nonsensical.</p>
+           <p>A few are good: <span class="highlight hl-good">"the"</span>, <span class="highlight hl-good">"a"</span>, <span class="highlight hl-good">"my"</span>. They're brighter and larger here because they have higher probability.</p>
+           <p>How do we filter out the noise?</p>`,
+    // All candidates visible, scattered in 3D
+    getVisibility: () => CANDIDATES.map(() => 1.0),
+    getPositions: () => SCATTER_POS.map(p => ({ ...p })),
+    getSizes: () => CANDIDATES.map(c => 0.15 + c.prob * 2.5),
+    camera: { x: 0, y: 2, z: 16 },
+    target: { x: 0, y: 0, z: 0 },
+    autoRotate: true,
+    cuttingPlane: false,
+    showBucket: false,
+    showPipeline: false,
+    scenario: null,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Top-k: Keep the best k words',
+    body: `<p><span class="highlight hl-topk">Top-k sampling</span> is the simplest filter. Pick a number <strong>k</strong> (say, 5), sort all candidates by probability, and <strong>keep only the top k</strong>. Everything else is discarded.</p>
+           <p>Watch as a cutting plane sweeps through. Only the 5 highest-probability words survive: <span class="highlight hl-good">"the"</span>, <span class="highlight hl-good">"a"</span>, <span class="highlight hl-good">"this"</span>, <span class="highlight hl-good">"my"</span>, <span class="highlight hl-good">"his"</span>.</p>
+           <p>Simple but effective. The garbage is gone.</p>`,
+    getVisibility: () => {
+      const topK = new Set(SORTED_INDICES.slice(0, 5));
+      return CANDIDATES.map((_, i) => topK.has(i) ? 1.0 : 0.0);
+    },
+    getPositions: () => {
+      const topK = new Set(SORTED_INDICES.slice(0, 5));
+      return SCATTER_POS.map((p, i) => {
+        if (topK.has(i)) return { ...p };
+        // Fall away
+        return { x: p.x, y: p.y - 12, z: p.z };
+      });
+    },
+    getSizes: () => {
+      const topK = new Set(SORTED_INDICES.slice(0, 5));
+      return CANDIDATES.map((c, i) => topK.has(i) ? 0.2 + c.prob * 3.0 : 0.1);
+    },
+    camera: { x: 0, y: 2, z: 16 },
+    target: { x: 0, y: 0, z: 0 },
+    autoRotate: true,
+    cuttingPlane: true,
+    showBucket: false,
+    showPipeline: false,
+    scenario: null,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'The problem with fixed k',
+    body: `<p>But <strong>k is fixed</strong>, and language is not. Sometimes the model is very confident &mdash; only 2-3 words make sense. Other times, probability is spread across 15+ reasonable options.</p>
+           <p><strong>Left scenario:</strong> The model is confident. The top 2 words hold most probability. Keeping k=5 means we include 3 garbage words &mdash; <span class="highlight hl-bad">too loose</span>.</p>
+           <p><strong>Right scenario:</strong> Probability is spread evenly across many good words. Keeping k=5 cuts off perfectly good candidates &mdash; <span class="highlight hl-bad">too restrictive</span>.</p>
+           <p>We need something <em>adaptive</em>.</p>`,
+    getVisibility: () => CANDIDATES.map(() => 1.0),
+    getPositions: () => CANDIDATES.map((_, i) => ({ x: 0, y: 0, z: 0 })), // overridden by scenario
+    getSizes: () => CANDIDATES.map(() => 0.3),
+    camera: { x: 0, y: 4, z: 22 },
+    target: { x: 0, y: 2, z: 0 },
+    autoRotate: false,
+    cuttingPlane: false,
+    showBucket: false,
+    showPipeline: false,
+    scenario: 'dual',
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Top-p (nucleus): Adaptive filtering',
+    body: `<p><span class="highlight hl-topp">Top-p sampling</span> takes a different approach. Instead of a fixed count, we set a <strong>probability threshold p</strong> (e.g. 0.9).</p>
+           <p>Sort words by probability. Add them one by one to a "bucket" until the cumulative probability reaches <strong>p = 0.9</strong>. Then stop.</p>
+           <p>When the model is confident, only 3 words fill the bucket. When probability is spread out, maybe 12 words make it in. The filter <em>adapts</em> to the distribution.</p>
+           <p>This is why it's called <strong>nucleus sampling</strong> &mdash; it captures the "nucleus" of the probability mass.</p>`,
+    getVisibility: () => {
+      // Include words until cumulative probability reaches 0.9
+      let cumulative = 0;
+      const included = new Set();
+      for (const idx of SORTED_INDICES) {
+        if (cumulative >= 0.9) break;
+        cumulative += CANDIDATES[idx].prob;
+        included.add(idx);
+      }
+      return CANDIDATES.map((_, i) => included.has(i) ? 1.0 : 0.15);
+    },
+    getPositions: () => {
+      // Arrange in an arc sorted by probability
+      const result = new Array(CANDIDATES.length);
+      let cumulative = 0;
+      const included = new Set();
+      for (const idx of SORTED_INDICES) {
+        if (cumulative >= 0.9) break;
+        cumulative += CANDIDATES[idx].prob;
+        included.add(idx);
+      }
+      SORTED_INDICES.forEach((origIdx, sortPos) => {
+        const angle = (sortPos / CANDIDATES.length) * Math.PI * 1.4 - Math.PI * 0.7;
+        const r = 5;
+        result[origIdx] = {
+          x: r * Math.sin(angle),
+          y: included.has(origIdx) ? 1 + CANDIDATES[origIdx].prob * 12 : -3,
+          z: r * Math.cos(angle) - 3,
+        };
+      });
+      return result;
+    },
+    getSizes: () => CANDIDATES.map(c => 0.15 + c.prob * 2.5),
+    camera: { x: 0, y: 4, z: 14 },
+    target: { x: 0, y: 1, z: -1 },
+    autoRotate: true,
+    cuttingPlane: false,
+    showBucket: true,
+    showPipeline: false,
+    scenario: null,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Together they shape the output',
+    body: `<p>In practice, these filters work as a <strong>pipeline</strong>:</p>
+           <p><span class="highlight hl-temp">Raw logits</span> &rarr; <span class="highlight hl-temp">Softmax</span> &rarr; <span class="highlight hl-topk">Top-k filter</span> &rarr; <span class="highlight hl-topp">Top-p filter</span> &rarr; <span class="highlight hl-temp">Temperature</span> &rarr; <span class="highlight hl-good">Final sample</span></p>
+           <p>Each step progressively refines the cloud of candidates. Raw logits are thousands of scores. Softmax turns them into probabilities. Top-k and top-p prune the unlikely. Temperature controls how "sharp" or "flat" the remaining distribution is.</p>
+           <p>These controls let you tune how an LLM writes &mdash; from <strong>precise and predictable</strong> to <strong>wild and creative</strong>.</p>`,
+    getVisibility: () => CANDIDATES.map(() => 1.0),
+    getPositions: () => CANDIDATES.map((_, i) => ({ x: 0, y: 0, z: 0 })), // overridden by pipeline
+    getSizes: () => CANDIDATES.map(c => 0.15 + c.prob * 2.5),
+    camera: { x: 0, y: 3, z: 18 },
+    target: { x: 0, y: 0, z: 0 },
+    autoRotate: false,
+    cuttingPlane: false,
+    showBucket: false,
+    showPipeline: true,
+    scenario: null,
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.018);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 2, 16);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 6;
+controls.maxDistance = 40;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight1 = new THREE.PointLight(0x4488ff, 0.4, 50);
+pointLight1.position.set(-8, 5, 5);
+scene.add(pointLight1);
+const pointLight2 = new THREE.PointLight(0xff6644, 0.2, 50);
+pointLight2.position.set(8, -3, -5);
+scene.add(pointLight2);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(24, 24, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   PROMPT ENDPOINT (small marker in scene)
+   =================================================================== */
+
+const promptGeo = new THREE.OctahedronGeometry(0.3, 0);
+const promptMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.5,
+  roughness: 0.2,
+  metalness: 0.3,
+});
+const promptMesh = new THREE.Mesh(promptGeo, promptMat);
+promptMesh.position.set(0, 0, 0);
+scene.add(promptMesh);
+
+const promptLabel = makeTextSprite('"...sat on"', 0xffffff);
+promptLabel.position.set(0, -0.8, 0);
+scene.add(promptLabel);
+
+/* ===================================================================
+   CANDIDATE SPHERES & LABELS
+   =================================================================== */
+
+const wordObjects = CANDIDATES.map((c, i) => {
+  const baseSize = 0.15 + c.prob * 2.5;
+  const geo = new THREE.SphereGeometry(1, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: c.color,
+    emissive: c.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.scale.setScalar(baseSize);
+
+  // Glow
+  const glowGeo = new THREE.SphereGeometry(1.6, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: c.color,
+    transparent: true,
+    opacity: 0.1,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+
+  scene.add(mesh);
+
+  const label = makeTextSprite(c.word, c.color);
+  scene.add(label);
+
+  const pos = SCATTER_POS[i];
+  mesh.position.set(pos.x, pos.y, pos.z);
+
+  return {
+    mesh,
+    label,
+    glow,
+    targetPos: new THREE.Vector3(pos.x, pos.y, pos.z),
+    targetScale: baseSize,
+    targetOpacity: 1.0,
+  };
+});
+
+function makeTextSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = 'bold 28px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 24;
+  const ph = 38;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const clr = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(clr.r*255)},${Math.floor(clr.g*255)},${Math.floor(clr.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(2.5, 0.625, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/* ===================================================================
+   CUTTING PLANE (Stage 2)
+   =================================================================== */
+
+const planeGeo = new THREE.PlaneGeometry(20, 20);
+const planeMat = new THREE.MeshBasicMaterial({
+  color: 0x42a5f5,
+  transparent: true,
+  opacity: 0,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+const cuttingPlane = new THREE.Mesh(planeGeo, planeMat);
+cuttingPlane.rotation.x = Math.PI / 2;
+cuttingPlane.position.y = 0;
+scene.add(cuttingPlane);
+
+/* ===================================================================
+   BUCKET RING (Stage 4) - a torus showing the probability threshold
+   =================================================================== */
+
+const bucketGeo = new THREE.TorusGeometry(5, 0.06, 16, 64);
+const bucketMat = new THREE.MeshBasicMaterial({
+  color: 0xab47bc,
+  transparent: true,
+  opacity: 0,
+});
+const bucketRing = new THREE.Mesh(bucketGeo, bucketMat);
+bucketRing.rotation.x = Math.PI / 2;
+bucketRing.position.set(0, 1, -3);
+scene.add(bucketRing);
+
+// Probability bar visualization for bucket
+const bucketBarGroup = new THREE.Group();
+scene.add(bucketBarGroup);
+
+/* ===================================================================
+   PIPELINE (Stage 5) - stages shown as zones
+   =================================================================== */
+
+const pipelineGroup = new THREE.Group();
+scene.add(pipelineGroup);
+
+const PIPELINE_STAGES_DATA = [
+  { label: 'Raw\nLogits', x: -10, color: 0xff9800, count: 18 },
+  { label: 'Softmax', x: -5, color: 0xffc107, count: 18 },
+  { label: 'Top-k', x: 0, color: 0x42a5f5, count: 8 },
+  { label: 'Top-p', x: 5, color: 0xab47bc, count: 5 },
+  { label: 'Sample', x: 10, color: 0x66bb6a, count: 1 },
+];
+
+const pipelineZones = [];
+const pipelineLabels = [];
+
+PIPELINE_STAGES_DATA.forEach((ps, idx) => {
+  // Funnel ring for each stage
+  const ringGeo = new THREE.TorusGeometry(1.5 + ps.count * 0.15, 0.05, 16, 48);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: ps.color,
+    transparent: true,
+    opacity: 0,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.y = Math.PI / 2;
+  ring.position.set(ps.x, 1.5, 0);
+  pipelineGroup.add(ring);
+  pipelineZones.push(ring);
+
+  // Label
+  const lbl = makePipelineLabel(ps.label, ps.color);
+  lbl.position.set(ps.x, -1.5, 0);
+  lbl.material.opacity = 0;
+  pipelineGroup.add(lbl);
+  pipelineLabels.push(lbl);
+
+  // Connecting lines between stages
+  if (idx > 0) {
+    const prevX = PIPELINE_STAGES_DATA[idx - 1].x;
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(prevX + 1.8, 1.5, 0),
+      new THREE.Vector3(ps.x - 1.8, 1.5, 0),
+    ]);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0x555555,
+      transparent: true,
+      opacity: 0,
+    });
+    const line = new THREE.Line(lineGeo, lineMat);
+    pipelineGroup.add(line);
+    pipelineZones.push(line);
+  }
+});
+
+function makePipelineLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 80;
+
+  ctx.font = 'bold 22px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},0.95)`;
+  const lines = text.split('\n');
+  lines.forEach((line, i) => {
+    ctx.fillText(line, canvas.width / 2, canvas.height / 2 + (i - (lines.length-1)/2) * 26);
+  });
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(3, 0.9, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   DUAL SCENARIO (Stage 3) - two side-by-side distributions
+   =================================================================== */
+
+// Create scenario sphere sets
+const scenarioLeftGroup = new THREE.Group();
+const scenarioRightGroup = new THREE.Group();
+scene.add(scenarioLeftGroup);
+scene.add(scenarioRightGroup);
+
+// Left scenario: confident (2 words dominate)
+const SCENARIO_LEFT = [
+  { word: 'the',   prob: 0.55, color: 0x66bb6a },
+  { word: 'a',     prob: 0.30, color: 0x4caf50 },
+  { word: 'his',   prob: 0.04, color: 0x9e9e9e },
+  { word: 'my',    prob: 0.03, color: 0x8a8a8a },
+  { word: 'her',   prob: 0.02, color: 0x787878 },
+];
+
+// Right scenario: diffuse (many reasonable words)
+const SCENARIO_RIGHT = [
+  { word: 'mat',    prob: 0.09, color: 0x66bb6a },
+  { word: 'floor',  prob: 0.08, color: 0x4caf50 },
+  { word: 'bed',    prob: 0.08, color: 0x81c784 },
+  { word: 'couch',  prob: 0.07, color: 0xa5d6a7 },
+  { word: 'table',  prob: 0.07, color: 0x43a047 },
+  { word: 'roof',   prob: 0.06, color: 0x7cb342 },
+  { word: 'chair',  prob: 0.06, color: 0x9ccc65 },
+  { word: 'ledge',  prob: 0.05, color: 0x8bc34a },
+  { word: 'fence',  prob: 0.05, color: 0xaed581 },
+  { word: 'grass',  prob: 0.04, color: 0xc5e1a5 },
+];
+
+const scenarioLeftObjects = [];
+const scenarioRightObjects = [];
+
+function createScenarioSpheres(data, group, objects, offsetX) {
+  data.forEach((item, i) => {
+    const size = 0.2 + item.prob * 3;
+    const geo = new THREE.SphereGeometry(1, 24, 24);
+    const mat = new THREE.MeshStandardMaterial({
+      color: item.color,
+      emissive: item.color,
+      emissiveIntensity: 0.35,
+      roughness: 0.3,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.scale.setScalar(size);
+
+    // Glow
+    const glowGeo = new THREE.SphereGeometry(1.6, 24, 24);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: item.color,
+      transparent: true,
+      opacity: 0,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    mesh.add(glow);
+
+    // Position as bar chart
+    const barX = offsetX + (i - data.length / 2) * 1.2;
+    const barY = item.prob * 15;
+    mesh.position.set(barX, barY, 0);
+
+    group.add(mesh);
+
+    const label = makeTextSprite(item.word, item.color);
+    label.position.set(barX, -0.6, 0);
+    label.material.opacity = 0;
+    group.add(label);
+
+    objects.push({ mesh, label, glow, targetOpacity: 0 });
+  });
+}
+
+createScenarioSpheres(SCENARIO_LEFT, scenarioLeftGroup, scenarioLeftObjects, -6.5);
+createScenarioSpheres(SCENARIO_RIGHT, scenarioRightGroup, scenarioRightObjects, 6.5);
+
+// K=5 divider lines for scenario
+const scenarioDividerLeft = createDividerLine(-6.5, SCENARIO_LEFT.length);
+const scenarioDividerRight = createDividerLine(6.5, SCENARIO_RIGHT.length);
+scene.add(scenarioDividerLeft.line);
+scene.add(scenarioDividerRight.line);
+
+function createDividerLine(offsetX, count) {
+  // Vertical dashed line after 5th bar
+  const x = offsetX + (Math.min(5, count) - count / 2) * 1.2 - 0.6;
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(x, -1, 0.1),
+    new THREE.Vector3(x, 10, 0.1),
+  ]);
+  const mat = new THREE.LineDashedMaterial({
+    color: 0xef5350,
+    transparent: true,
+    opacity: 0,
+    dashSize: 0.3,
+    gapSize: 0.15,
+  });
+  const line = new THREE.Line(geo, mat);
+  line.computeLineDistances();
+  return { line, mat };
+}
+
+// Scenario labels
+const scenarioLabelLeft = makeScenarioTitle('Confident (k=5 too loose)', 0xef5350, -6.5, 7.5);
+const scenarioLabelRight = makeScenarioTitle('Diffuse (k=5 too restrictive)', 0xef5350, 6.5, 7.5);
+scene.add(scenarioLabelLeft.sprite);
+scene.add(scenarioLabelRight.sprite);
+
+function makeScenarioTitle(text, color, x, y) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 64;
+  ctx.font = 'bold 24px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},1)`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, opacity: 0 });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(6, 0.75, 1);
+  sprite.position.set(x, y, 0);
+  return { sprite, mat };
+}
+
+/* ===================================================================
+   PIPELINE CANDIDATE SPHERES (Stage 5)
+   =================================================================== */
+
+const pipelineSphereGroup = new THREE.Group();
+scene.add(pipelineSphereGroup);
+
+const pipelineSpheres = [];
+
+// Create small spheres representing candidates flowing through the pipeline
+function createPipelineSpheres() {
+  const rng = mulberry32(99);
+  const counts = [18, 18, 8, 5, 1];
+  PIPELINE_STAGES_DATA.forEach((ps, stageIdx) => {
+    const count = counts[stageIdx];
+    for (let i = 0; i < count; i++) {
+      const size = stageIdx === 4 ? 0.35 : 0.1 + rng() * 0.2;
+      const geo = new THREE.SphereGeometry(1, 16, 16);
+      const mat = new THREE.MeshStandardMaterial({
+        color: ps.color,
+        emissive: ps.color,
+        emissiveIntensity: 0.4,
+        transparent: true,
+        opacity: 0,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.scale.setScalar(size);
+
+      const spread = 1.2 + count * 0.12;
+      const angle = (i / count) * Math.PI * 2;
+      const r = rng() * spread;
+      mesh.position.set(
+        ps.x + Math.cos(angle) * r * 0.3,
+        1.5 + Math.sin(angle) * r,
+        (rng() - 0.5) * spread
+      );
+
+      pipelineSphereGroup.add(mesh);
+      pipelineSpheres.push({ mesh, stageIdx });
+    }
+  });
+}
+
+createPipelineSpheres();
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+/* ===================================================================
+   ANIMATION STATE
+   =================================================================== */
+
+const animState = {
+  cameraTarget: new THREE.Vector3(0, 2, 16),
+  controlsTarget: new THREE.Vector3(0, 0, 0),
+  showCuttingPlane: false,
+  cuttingPlaneY: 8,
+  showBucket: false,
+  showPipeline: false,
+  showScenario: false,
+  autoRotate: true,
+};
+
+function setTargetsForStage(stageIdx) {
+  const s = STAGES[stageIdx];
+
+  animState.cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  animState.controlsTarget.set(s.target.x, s.target.y, s.target.z);
+  animState.autoRotate = s.autoRotate;
+  animState.showCuttingPlane = s.cuttingPlane;
+  animState.showBucket = s.showBucket;
+  animState.showPipeline = s.showPipeline;
+  animState.showScenario = s.scenario === 'dual';
+
+  if (!s.showPipeline && s.scenario !== 'dual') {
+    const vis = s.getVisibility();
+    const pos = s.getPositions();
+    const sizes = s.getSizes();
+
+    wordObjects.forEach((wo, i) => {
+      wo.targetPos.set(pos[i].x, pos[i].y, pos[i].z);
+      wo.targetOpacity = vis[i];
+      wo.targetScale = sizes[i];
+    });
+  }
+
+  // Hide main spheres during special stages
+  if (s.showPipeline || s.scenario === 'dual') {
+    wordObjects.forEach(wo => {
+      wo.targetOpacity = 0;
+      wo.targetPos.set(0, -15, 0);
+    });
+  }
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+setTargetsForStage(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera3D.aspect = w / h;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerp = 2.5 * dt;
+
+  // ---- Main candidate spheres ----
+  wordObjects.forEach((wo, i) => {
+    wo.mesh.position.lerp(wo.targetPos, lerp);
+
+    // Scale lerp
+    const currentScale = wo.mesh.scale.x;
+    const newScale = currentScale + (wo.targetScale - currentScale) * lerp;
+    wo.mesh.scale.setScalar(newScale);
+
+    // Opacity lerp
+    wo.mesh.material.opacity += (wo.targetOpacity - wo.mesh.material.opacity) * lerp;
+    wo.glow.material.opacity = wo.mesh.material.opacity * 0.12;
+
+    // Label follows sphere
+    wo.label.position.set(
+      wo.mesh.position.x,
+      wo.mesh.position.y + newScale + 0.5,
+      wo.mesh.position.z
+    );
+    wo.label.material.opacity += (wo.targetOpacity - wo.label.material.opacity) * lerp;
+
+    // Subtle float
+    wo.mesh.position.y += Math.sin(t * 1.0 + i * 1.7) * 0.002;
+
+    // Pulse glow
+    if (wo.targetOpacity > 0.5) {
+      wo.glow.material.opacity = 0.06 + Math.sin(t * 2 + i * 1.3) * 0.04;
+    }
+  });
+
+  // ---- Prompt marker ----
+  promptMesh.rotation.y = t * 0.5;
+  const showPrompt = currentStage <= 1 ? 1 : 0;
+  promptMat.opacity += (showPrompt - promptMat.opacity) * lerp;
+  promptMat.transparent = true;
+  promptLabel.material.opacity += (showPrompt - promptLabel.material.opacity) * lerp;
+
+  // ---- Cutting plane (Stage 2) ----
+  const planeTargetOpacity = animState.showCuttingPlane ? 0.08 : 0;
+  planeMat.opacity += (planeTargetOpacity - planeMat.opacity) * lerp;
+  if (animState.showCuttingPlane) {
+    // Sweep plane down, settling at threshold
+    const targetY = -1.0;
+    cuttingPlane.position.y += (targetY - cuttingPlane.position.y) * lerp * 0.5;
+  } else {
+    cuttingPlane.position.y += (8 - cuttingPlane.position.y) * lerp;
+  }
+
+  // ---- Bucket ring (Stage 4) ----
+  const bucketTargetOpacity = animState.showBucket ? 0.4 : 0;
+  bucketMat.opacity += (bucketTargetOpacity - bucketMat.opacity) * lerp;
+  bucketRing.rotation.z = t * 0.3;
+
+  // ---- Scenario spheres (Stage 3) ----
+  const scenarioTargetOpacity = animState.showScenario ? 1 : 0;
+  scenarioLeftObjects.forEach(so => {
+    so.mesh.material.opacity += (scenarioTargetOpacity - so.mesh.material.opacity) * lerp;
+    so.glow.material.opacity = so.mesh.material.opacity * 0.1;
+    so.label.material.opacity += (scenarioTargetOpacity - so.label.material.opacity) * lerp;
+  });
+  scenarioRightObjects.forEach(so => {
+    so.mesh.material.opacity += (scenarioTargetOpacity - so.mesh.material.opacity) * lerp;
+    so.glow.material.opacity = so.mesh.material.opacity * 0.1;
+    so.label.material.opacity += (scenarioTargetOpacity - so.label.material.opacity) * lerp;
+  });
+  scenarioDividerLeft.mat.opacity += (scenarioTargetOpacity * 0.6 - scenarioDividerLeft.mat.opacity) * lerp;
+  scenarioDividerRight.mat.opacity += (scenarioTargetOpacity * 0.6 - scenarioDividerRight.mat.opacity) * lerp;
+  scenarioLabelLeft.mat.opacity += (scenarioTargetOpacity - scenarioLabelLeft.mat.opacity) * lerp;
+  scenarioLabelRight.mat.opacity += (scenarioTargetOpacity - scenarioLabelRight.mat.opacity) * lerp;
+
+  // ---- Pipeline (Stage 5) ----
+  const pipelineTargetOpacity = animState.showPipeline ? 0.7 : 0;
+  pipelineZones.forEach(z => {
+    z.material.opacity += (pipelineTargetOpacity - z.material.opacity) * lerp;
+  });
+  pipelineLabels.forEach(l => {
+    l.material.opacity += (pipelineTargetOpacity - l.material.opacity) * lerp;
+  });
+  pipelineSpheres.forEach((ps, i) => {
+    ps.mesh.material.opacity += (pipelineTargetOpacity - ps.mesh.material.opacity) * lerp;
+    // Subtle orbit
+    const angle = t * 0.8 + i * 0.5;
+    ps.mesh.position.y += Math.sin(angle) * 0.003;
+    ps.mesh.position.z += Math.cos(angle * 0.7) * 0.002;
+  });
+
+  // ---- Camera ----
+  camera3D.position.lerp(animState.cameraTarget, lerp * 0.7);
+  controls.target.lerp(animState.controlsTarget, lerp * 0.7);
+  controls.autoRotate = animState.autoRotate;
+
+  // ---- Grid ----
+  gridHelper.rotation.y = t * 0.015;
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+
+</script>
+</body>
+</html>

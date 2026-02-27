@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>When Models Make Things Up: Hallucination</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-confident { background: rgba(76,175,80,0.2); color: #2e7d32; }
+  .word-sparse    { background: rgba(255,152,0,0.2); color: #e65100; }
+  .word-wrong     { background: rgba(244,67,54,0.2); color: #c62828; }
+  .word-rag       { background: rgba(33,150,243,0.2); color: #1565c0; }
+  .word-cot       { background: rgba(156,39,176,0.2); color: #7b1fa2; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   EMBEDDING SPACE DATA
+   =================================================================== */
+
+// Dense region words (well-known topics)
+const DENSE_WORDS = [
+  { name: 'Paris', pos: [2, 3, 1], color: 0x4fc3f7 },
+  { name: 'France', pos: [2.8, 3.5, 0.8], color: 0x4fc3f7 },
+  { name: 'Europe', pos: [3.5, 3.2, 1.5], color: 0x4fc3f7 },
+  { name: 'capital', pos: [1.5, 3.8, 1.2], color: 0x4fc3f7 },
+  { name: 'city', pos: [1.8, 2.5, 0.5], color: 0x4fc3f7 },
+  { name: 'London', pos: [3.2, 2.2, 2.0], color: 0x4fc3f7 },
+  { name: 'Berlin', pos: [4.0, 2.8, 1.8], color: 0x4fc3f7 },
+  { name: 'country', pos: [3.8, 4.0, 0.5], color: 0x4fc3f7 },
+  { name: 'river', pos: [1.0, 2.0, 1.8], color: 0x4fc3f7 },
+  { name: 'tower', pos: [2.2, 2.0, 0.2], color: 0x4fc3f7 },
+  { name: 'culture', pos: [2.5, 4.2, 2.0], color: 0x4fc3f7 },
+  { name: 'travel', pos: [3.0, 1.8, 2.5], color: 0x4fc3f7 },
+  { name: 'museum', pos: [1.2, 3.0, 2.2], color: 0x4fc3f7 },
+  { name: 'wine', pos: [2.0, 4.5, 0.3], color: 0x4fc3f7 },
+  { name: 'history', pos: [3.5, 4.5, 2.5], color: 0x4fc3f7 },
+];
+
+// Sparse region words (obscure topics)
+const SPARSE_WORDS = [
+  { name: 'obscure', pos: [-4.5, -3.0, -2.0], color: 0xff8a65 },
+  { name: 'niche', pos: [-3.0, -4.5, -3.5], color: 0xff8a65 },
+  { name: 'rare', pos: [-5.5, -2.0, -4.0], color: 0xff8a65 },
+];
+
+// Wrong-region words (plausible-sounding but incorrect)
+const WRONG_WORDS = [
+  { name: 'founded', pos: [-3.0, 1.5, -5.0], color: 0xef5350 },
+  { name: '1672', pos: [-4.0, 2.0, -5.5], color: 0xef5350 },
+  { name: 'treaty', pos: [-2.5, 2.5, -4.5], color: 0xef5350 },
+  { name: 'emperor', pos: [-3.5, 3.0, -6.0], color: 0xef5350 },
+];
+
+// RAG document anchors
+const DOC_WORDS = [
+  { name: 'Doc 1', pos: [1.0, 0.5, 0.5], color: 0x2196f3 },
+  { name: 'Doc 2', pos: [3.0, 1.0, 1.0], color: 0x2196f3 },
+  { name: 'Doc 3', pos: [2.0, 3.0, 0.5], color: 0x2196f3 },
+];
+
+// CoT stepping stones
+const COT_WORDS = [
+  { name: 'Step 1', pos: [0.5, 0.5, 0.5], color: 0xce93d8 },
+  { name: 'Step 2', pos: [1.5, 1.5, 0.8], color: 0xce93d8 },
+  { name: 'Step 3', pos: [2.2, 2.5, 1.0], color: 0xce93d8 },
+  { name: 'Step 4', pos: [2.8, 3.2, 1.2], color: 0xce93d8 },
+];
+
+// Grounding boundary markers
+const GROUND_WORDS = [
+  { name: 'boundary', pos: [0, 5.5, 0], color: 0x66bb6a },
+  { name: 'boundary', pos: [5.5, 0, 0], color: 0x66bb6a },
+  { name: 'boundary', pos: [0, 0, 3.5], color: 0x66bb6a },
+];
+
+/* ===================================================================
+   PATH DEFINITIONS
+   =================================================================== */
+
+// Confident path through dense space
+const CONFIDENT_PATH = [
+  [0, 0, 0],
+  [0.8, 1.0, 0.3],
+  [1.5, 1.8, 0.6],
+  [2.0, 2.5, 0.8],
+  [2.4, 3.0, 1.0],
+  [2.8, 3.5, 0.8],
+  [3.2, 3.2, 1.2],
+];
+
+// Path that ventures into sparse territory
+const SPARSE_PATH = [
+  [0, 0, 0],
+  [0.8, 1.0, 0.3],
+  [1.5, 1.8, 0.6],
+  [1.0, 0.8, -0.5],
+  [-0.5, -0.2, -1.5],
+  [-2.0, -1.5, -2.5],
+  [-3.5, -3.0, -3.0],
+];
+
+// Hallucination path: looks smooth but wrong region
+const HALLUCINATION_PATH = [
+  [0, 0, 0],
+  [0.5, 0.8, -0.5],
+  [0.0, 1.2, -1.5],
+  [-0.8, 1.5, -2.5],
+  [-1.8, 1.8, -3.5],
+  [-2.8, 2.0, -4.5],
+  [-3.5, 2.5, -5.5],
+];
+
+// Truthful path for comparison
+const TRUTH_PATH = [
+  [0, 0, 0],
+  [0.8, 1.0, 0.3],
+  [1.5, 2.0, 0.6],
+  [2.0, 2.8, 0.8],
+  [2.5, 3.2, 1.0],
+  [2.8, 3.5, 0.8],
+  [3.2, 3.8, 1.2],
+];
+
+// RAG-anchored path
+const RAG_PATH = [
+  [0, 0, 0],
+  [0.8, 0.5, 0.4],
+  [1.5, 1.0, 0.6],
+  [2.2, 1.8, 0.8],
+  [2.5, 2.5, 0.6],
+  [2.8, 3.0, 0.8],
+  [3.0, 3.5, 1.0],
+];
+
+// CoT path (more deliberate stepping)
+const COT_PATH = [
+  [0.5, 0.5, 0.5],
+  [1.5, 1.5, 0.8],
+  [2.2, 2.5, 1.0],
+  [2.8, 3.2, 1.2],
+];
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'The model always has an answer',
+    body: `<p>LLMs always produce output. They always pick a next word. They can't say <span class="word-tag word-confident">"I don't know"</span> naturally &mdash; there's always a most-probable next token.</p>
+           <p>Watch the path move through embedding space. At each step, the model picks the highest-probability next word from nearby candidates. In well-populated regions, there are many good options.</p>
+           <p>The path lands confidently near known words &mdash; each step is short, each choice is clear. This is the model doing what it does best.</p>`,
+    visuals: 'confident',
+    camera: { x: 8, y: 6, z: 12 },
+    target: { x: 1.5, y: 1.5, z: 0.5 },
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Venturing into sparse space',
+    body: `<p>When the model encounters topics outside its training, it enters <span class="word-tag word-sparse">sparse regions</span> of embedding space. But it still generates &mdash; it just has less to work with.</p>
+           <p>Watch what happens: the path reaches an area with very few nearby word-spheres. The candidate cloud is thin, uncertain. But the model <em>still picks something</em>.</p>
+           <p>The chosen word sends the path into an even sparser region. Each step pulls the model further from what it knows &mdash; but it keeps generating anyway.</p>`,
+    visuals: 'sparse',
+    camera: { x: 2, y: 4, z: 14 },
+    target: { x: -1, y: -0.5, z: -1 },
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Confident but wrong',
+    body: `<p>Each individual step seemed reasonable. The model was <span class="word-tag word-confident">locally confident</span> at every word. But the overall output is <span class="word-tag word-wrong">wrong</span> &mdash; a hallucination.</p>
+           <p>Look at the path: it appears smooth and deliberate, just like a truthful generation. But it has wandered into a region far from any "truth" cluster &mdash; generating plausible-sounding but completely incorrect facts.</p>
+           <p>The model has no way to detect this. It optimizes each step locally, with no global sense of whether the destination is correct.</p>`,
+    visuals: 'hallucination',
+    camera: { x: 4, y: 6, z: 14 },
+    target: { x: 0, y: 1.5, z: -2 },
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Why it sounds so convincing',
+    body: `<p>Hallucinations sound confident because the generation process is <em>identical</em> whether the output is true or false. The model has no internal <span class="word-tag word-wrong">"truth detector"</span>.</p>
+           <p>Compare the two paths side by side: the <span class="word-tag word-confident">green truthful path</span> and the <span class="word-tag word-wrong">red hallucinated path</span>. They look the same &mdash; same smoothness, same confidence at each step.</p>
+           <p>The model treats them identically. Only by checking against external reality can we tell which is which.</p>`,
+    visuals: 'comparison',
+    camera: { x: 6, y: 5, z: 16 },
+    target: { x: 0, y: 2, z: -1.5 },
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'What we can do about it',
+    body: `<p>Understanding hallucination helps us build better systems &mdash; not by eliminating it entirely, but by keeping the model's journey grounded in reality.</p>
+           <p><span class="word-tag word-rag">RAG</span> anchors the path to verified documents, pulling it back toward known facts. <span class="word-tag word-cot">Chain-of-thought</span> makes each step more deliberate, forcing the model to reason explicitly.</p>
+           <p>Grounding constrains the space to known regions, preventing the path from drifting into uncharted territory.</p>`,
+    visuals: 'mitigation',
+    camera: { x: 8, y: 7, z: 14 },
+    target: { x: 1.5, y: 1.5, z: 0.5 },
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.015);
+
+const camera = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera.position.set(8, 6, 12);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 6;
+controls.maxDistance = 40;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.3;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight.position.set(-5, 5, 5);
+scene.add(pointLight);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(24, 24, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   HELPER FUNCTIONS
+   =================================================================== */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color, scale = 2.5) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = 'bold 28px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = Math.min(metrics.width + 24, 250);
+  const ph = 38;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(scale, scale * 0.25, 1);
+  return sprite;
+}
+
+function createWordSphere(word, size = 0.25) {
+  const group = new THREE.Group();
+
+  const geo = new THREE.SphereGeometry(size, 24, 24);
+  const mat = new THREE.MeshStandardMaterial({
+    color: word.color,
+    emissive: word.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  group.add(mesh);
+
+  const glowGeo = new THREE.SphereGeometry(size * 1.6, 24, 24);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: word.color,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  group.add(glow);
+
+  group.position.set(word.pos[0], word.pos[1], word.pos[2]);
+
+  const label = makeTextSprite(word.name, word.color, 2.0);
+  label.position.set(0, size + 0.5, 0);
+  group.add(label);
+
+  group.userData = {
+    baseOpacity: 1,
+    targetOpacity: 1,
+    mesh, glow, label,
+    originalPos: new THREE.Vector3(word.pos[0], word.pos[1], word.pos[2]),
+    wordData: word,
+  };
+
+  return group;
+}
+
+function createPath(points, color, width = 3) {
+  const group = new THREE.Group();
+
+  // Smooth curve through points
+  const vectors = points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5);
+  const curvePoints = curve.getPoints(60);
+
+  const lineGeo = new THREE.BufferGeometry().setFromPoints(curvePoints);
+  const lineMat = new THREE.LineBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.8,
+  });
+  const line = new THREE.Line(lineGeo, lineMat);
+  group.add(line);
+
+  // Arrow at the end
+  const lastPt = curvePoints[curvePoints.length - 1];
+  const prevPt = curvePoints[curvePoints.length - 3];
+  const dir = new THREE.Vector3().subVectors(lastPt, prevPt).normalize();
+  const arrowGeo = new THREE.ConeGeometry(0.12, 0.35, 8);
+  const arrowMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.9 });
+  const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+  arrow.position.copy(lastPt);
+  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  group.add(arrow);
+
+  // Step dots along path
+  const stepCount = points.length;
+  for (let i = 0; i < stepCount; i++) {
+    const t = i / (stepCount - 1);
+    const pt = curve.getPoint(t);
+    const dotGeo = new THREE.SphereGeometry(0.08, 12, 12);
+    const dotMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.9 });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.copy(pt);
+    group.add(dot);
+  }
+
+  group.userData = {
+    targetOpacity: 1,
+    line, arrow,
+    allMaterials: [lineMat, arrowMat],
+  };
+
+  return group;
+}
+
+function createAnimatedPathTracer(pathGroup, color, speed = 1.0) {
+  const tracerGeo = new THREE.SphereGeometry(0.15, 16, 16);
+  const tracerMat = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const tracer = new THREE.Mesh(tracerGeo, tracerMat);
+
+  const glowGeo = new THREE.SphereGeometry(0.35, 16, 16);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.3,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  tracer.add(glow);
+
+  pathGroup.add(tracer);
+
+  tracer.userData = {
+    speed,
+    progress: 0,
+    glowMat,
+    tracerMat,
+  };
+
+  return tracer;
+}
+
+function createBoundaryBox(min, max, color) {
+  const group = new THREE.Group();
+  const geo = new THREE.BoxGeometry(max[0]-min[0], max[1]-min[1], max[2]-min[2]);
+  const edges = new THREE.EdgesGeometry(geo);
+  const mat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.3 });
+  const wireframe = new THREE.LineSegments(edges, mat);
+  wireframe.position.set(
+    (min[0]+max[0])/2,
+    (min[1]+max[1])/2,
+    (min[2]+max[2])/2
+  );
+  group.add(wireframe);
+
+  // Semi-transparent faces
+  const faceMat = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.03,
+    side: THREE.DoubleSide,
+  });
+  const faceMesh = new THREE.Mesh(geo, faceMat);
+  faceMesh.position.copy(wireframe.position);
+  group.add(faceMesh);
+
+  group.userData = { targetOpacity: 1, wireframeMat: mat, faceMat };
+  return group;
+}
+
+function createDocAnchorLines(docGroups, pathPoints, color) {
+  const group = new THREE.Group();
+  docGroups.forEach((docGrp, i) => {
+    const docPos = docGrp.position;
+    // Pick a point on path that's nearby
+    const pathIdx = Math.min(i + 2, pathPoints.length - 1);
+    const pathPt = new THREE.Vector3(pathPoints[pathIdx][0], pathPoints[pathIdx][1], pathPoints[pathIdx][2]);
+    const geo = new THREE.BufferGeometry().setFromPoints([docPos, pathPt]);
+    const mat = new THREE.LineDashedMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.5,
+      dashSize: 0.3,
+      gapSize: 0.15,
+    });
+    const line = new THREE.Line(geo, mat);
+    line.computeLineDistances();
+    group.add(line);
+  });
+  group.userData = { targetOpacity: 1 };
+  return group;
+}
+
+/* ===================================================================
+   BUILD SCENE ELEMENTS
+   =================================================================== */
+
+// All word sphere groups, organized by visual state
+const allGroups = {
+  dense: [],
+  sparse: [],
+  wrong: [],
+  docs: [],
+  cot: [],
+  ground: [],
+};
+
+const allPaths = {};
+const allTracers = {};
+const allExtras = {};
+
+// Dense region word spheres
+DENSE_WORDS.forEach(w => {
+  const g = createWordSphere(w, 0.22);
+  scene.add(g);
+  allGroups.dense.push(g);
+});
+
+// Sparse region word spheres
+SPARSE_WORDS.forEach(w => {
+  const g = createWordSphere(w, 0.18);
+  scene.add(g);
+  allGroups.sparse.push(g);
+});
+
+// Wrong region word spheres
+WRONG_WORDS.forEach(w => {
+  const g = createWordSphere(w, 0.2);
+  scene.add(g);
+  allGroups.wrong.push(g);
+});
+
+// Doc anchors
+DOC_WORDS.forEach(w => {
+  const g = createWordSphere(w, 0.3);
+  scene.add(g);
+  allGroups.docs.push(g);
+});
+
+// CoT stepping stones
+COT_WORDS.forEach(w => {
+  const g = createWordSphere(w, 0.2);
+  scene.add(g);
+  allGroups.cot.push(g);
+});
+
+// Paths
+allPaths.confident = createPath(CONFIDENT_PATH, 0x66bb6a);
+scene.add(allPaths.confident);
+
+allPaths.sparse = createPath(SPARSE_PATH, 0xff9800);
+scene.add(allPaths.sparse);
+
+allPaths.hallucination = createPath(HALLUCINATION_PATH, 0xef5350);
+scene.add(allPaths.hallucination);
+
+allPaths.truth = createPath(TRUTH_PATH, 0x66bb6a);
+scene.add(allPaths.truth);
+
+allPaths.rag = createPath(RAG_PATH, 0x42a5f5);
+scene.add(allPaths.rag);
+
+allPaths.cot = createPath(COT_PATH, 0xce93d8);
+scene.add(allPaths.cot);
+
+// Tracers
+allTracers.confident = createAnimatedPathTracer(allPaths.confident, 0x66bb6a, 0.8);
+allTracers.sparse = createAnimatedPathTracer(allPaths.sparse, 0xff9800, 0.6);
+allTracers.hallucination = createAnimatedPathTracer(allPaths.hallucination, 0xef5350, 0.7);
+allTracers.truth = createAnimatedPathTracer(allPaths.truth, 0x66bb6a, 0.7);
+allTracers.rag = createAnimatedPathTracer(allPaths.rag, 0x42a5f5, 0.7);
+allTracers.cot = createAnimatedPathTracer(allPaths.cot, 0xce93d8, 0.5);
+
+// Boundary box for grounding
+allExtras.groundingBox = createBoundaryBox([-0.5, -0.5, -0.5], [5, 5.5, 3.5], 0x66bb6a);
+scene.add(allExtras.groundingBox);
+
+// Doc anchor lines
+allExtras.docLines = createDocAnchorLines(allGroups.docs, RAG_PATH, 0x2196f3);
+scene.add(allExtras.docLines);
+
+// Dense region indicator (subtle boundary)
+allExtras.denseRegion = createBoundaryBox([-0.2, -0.2, -0.5], [5, 5.5, 3.5], 0x4fc3f7);
+scene.add(allExtras.denseRegion);
+
+// Sparse region indicator
+allExtras.sparseRegion = createBoundaryBox([-6.5, -5.5, -5], [-2, -1, -1], 0xff8a65);
+scene.add(allExtras.sparseRegion);
+
+// Wrong region indicator
+allExtras.wrongRegion = createBoundaryBox([-5, 0.5, -7], [-1.5, 4, -3.5], 0xef5350);
+scene.add(allExtras.wrongRegion);
+
+// "Truth cluster" label at dense region center
+const truthLabel = makeTextSprite('Known Facts', 0x4fc3f7, 3.0);
+truthLabel.position.set(2.5, 5.8, 1.0);
+truthLabel.material.opacity = 0;
+scene.add(truthLabel);
+
+// "Sparse region" label
+const sparseLabel = makeTextSprite('Sparse Region', 0xff8a65, 3.0);
+sparseLabel.position.set(-4, -5.8, -3);
+sparseLabel.material.opacity = 0;
+scene.add(sparseLabel);
+
+// "Wrong region" label
+const wrongLabel = makeTextSprite('Wrong Region', 0xef5350, 3.0);
+wrongLabel.position.set(-3.2, 4.5, -5.2);
+wrongLabel.material.opacity = 0;
+scene.add(wrongLabel);
+
+/* ===================================================================
+   VISIBILITY MANAGEMENT
+   =================================================================== */
+
+function setGroupOpacity(groups, opacity) {
+  groups.forEach(g => {
+    g.userData.targetOpacity = opacity;
+  });
+}
+
+function setPathOpacity(pathObj, opacity) {
+  if (!pathObj) return;
+  pathObj.userData.targetOpacity = opacity;
+}
+
+function setExtraOpacity(extraObj, opacity) {
+  if (!extraObj) return;
+  extraObj.userData.targetOpacity = opacity;
+}
+
+function configureVisuals(stage) {
+  const v = stage.visuals;
+
+  // Default everything to hidden
+  Object.values(allGroups).forEach(arr => setGroupOpacity(arr, 0));
+  Object.values(allPaths).forEach(p => setPathOpacity(p, 0));
+  Object.values(allExtras).forEach(e => setExtraOpacity(e, 0));
+  truthLabel.userData = truthLabel.userData || {};
+  truthLabel.userData.targetOpacity = 0;
+  sparseLabel.userData = sparseLabel.userData || {};
+  sparseLabel.userData.targetOpacity = 0;
+  wrongLabel.userData = wrongLabel.userData || {};
+  wrongLabel.userData.targetOpacity = 0;
+
+  // Reset tracers
+  Object.values(allTracers).forEach(t => { t.userData.progress = 0; });
+
+  if (v === 'confident') {
+    setGroupOpacity(allGroups.dense, 1);
+    setPathOpacity(allPaths.confident, 1);
+    setExtraOpacity(allExtras.denseRegion, 0.3);
+    truthLabel.userData.targetOpacity = 0.7;
+  }
+  else if (v === 'sparse') {
+    setGroupOpacity(allGroups.dense, 0.6);
+    setGroupOpacity(allGroups.sparse, 1);
+    setPathOpacity(allPaths.sparse, 1);
+    setExtraOpacity(allExtras.denseRegion, 0.15);
+    setExtraOpacity(allExtras.sparseRegion, 0.4);
+    truthLabel.userData.targetOpacity = 0.4;
+    sparseLabel.userData.targetOpacity = 0.7;
+  }
+  else if (v === 'hallucination') {
+    setGroupOpacity(allGroups.dense, 0.4);
+    setGroupOpacity(allGroups.wrong, 1);
+    setPathOpacity(allPaths.hallucination, 1);
+    setExtraOpacity(allExtras.denseRegion, 0.1);
+    setExtraOpacity(allExtras.wrongRegion, 0.4);
+    truthLabel.userData.targetOpacity = 0.3;
+    wrongLabel.userData.targetOpacity = 0.7;
+  }
+  else if (v === 'comparison') {
+    setGroupOpacity(allGroups.dense, 0.5);
+    setGroupOpacity(allGroups.wrong, 0.7);
+    setPathOpacity(allPaths.truth, 1);
+    setPathOpacity(allPaths.hallucination, 1);
+    setExtraOpacity(allExtras.denseRegion, 0.1);
+    setExtraOpacity(allExtras.wrongRegion, 0.3);
+    truthLabel.userData.targetOpacity = 0.5;
+    wrongLabel.userData.targetOpacity = 0.5;
+  }
+  else if (v === 'mitigation') {
+    setGroupOpacity(allGroups.dense, 0.7);
+    setGroupOpacity(allGroups.docs, 1);
+    setGroupOpacity(allGroups.cot, 1);
+    setPathOpacity(allPaths.rag, 1);
+    setPathOpacity(allPaths.cot, 1);
+    setExtraOpacity(allExtras.groundingBox, 0.5);
+    setExtraOpacity(allExtras.docLines, 0.6);
+    truthLabel.userData.targetOpacity = 0.6;
+  }
+}
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+// Camera animation targets
+const cameraTarget = new THREE.Vector3(8, 6, 12);
+const controlsTarget = new THREE.Vector3(1.5, 1.5, 0.5);
+
+// Build progress dots
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  const s = STAGES[idx];
+
+  cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  controlsTarget.set(s.target.x, s.target.y, s.target.z);
+
+  configureVisuals(s);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+configureVisuals(STAGES[0]);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   PATH CURVE HELPERS FOR TRACERS
+   =================================================================== */
+
+const pathCurves = {};
+
+function buildCurve(points) {
+  const vectors = points.map(p => new THREE.Vector3(p[0], p[1], p[2]));
+  return new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.5);
+}
+
+pathCurves.confident = buildCurve(CONFIDENT_PATH);
+pathCurves.sparse = buildCurve(SPARSE_PATH);
+pathCurves.hallucination = buildCurve(HALLUCINATION_PATH);
+pathCurves.truth = buildCurve(TRUTH_PATH);
+pathCurves.rag = buildCurve(RAG_PATH);
+pathCurves.cot = buildCurve(COT_PATH);
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function lerpOpacity(material, target, speed) {
+  if (!material) return;
+  material.opacity += (target - material.opacity) * speed;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Lerp camera
+  camera.position.lerp(cameraTarget, lerpSpeed * 0.5);
+  controls.target.lerp(controlsTarget, lerpSpeed * 0.5);
+
+  // Update word sphere groups
+  Object.values(allGroups).forEach(arr => {
+    arr.forEach((g, i) => {
+      const ud = g.userData;
+      const targetOp = ud.targetOpacity;
+
+      // Lerp mesh opacity
+      lerpOpacity(ud.mesh.material, targetOp, lerpSpeed * 1.5);
+      lerpOpacity(ud.glow.material, targetOp * 0.12, lerpSpeed * 1.5);
+      lerpOpacity(ud.label.material, targetOp, lerpSpeed * 1.5);
+
+      // Subtle float
+      const baseY = ud.originalPos.y;
+      g.position.y = baseY + Math.sin(t * 1.0 + i * 2.1) * 0.06;
+
+      // Pulse glow
+      if (ud.glow.material.opacity > 0.01) {
+        ud.glow.material.opacity = targetOp * (0.08 + Math.sin(t * 2.0 + i * 1.5) * 0.04);
+      }
+    });
+  });
+
+  // Update paths
+  Object.entries(allPaths).forEach(([key, pathGroup]) => {
+    const targetOp = pathGroup.userData.targetOpacity;
+    pathGroup.userData.allMaterials.forEach(mat => {
+      lerpOpacity(mat, targetOp * 0.8, lerpSpeed * 1.5);
+    });
+    // Also update step dot materials
+    pathGroup.children.forEach(child => {
+      if (child.isMesh && child !== pathGroup.userData.arrow) {
+        if (child.material && !child.userData.speed) {
+          lerpOpacity(child.material, targetOp * 0.9, lerpSpeed * 1.5);
+        }
+      }
+    });
+  });
+
+  // Update tracers along paths
+  Object.entries(allTracers).forEach(([key, tracer]) => {
+    const parentPath = allPaths[key];
+    if (!parentPath || parentPath.userData.targetOpacity < 0.1) {
+      tracer.visible = false;
+      return;
+    }
+    tracer.visible = true;
+
+    const curve = pathCurves[key];
+    if (!curve) return;
+
+    tracer.userData.progress += tracer.userData.speed * dt * 0.15;
+    if (tracer.userData.progress > 1) tracer.userData.progress -= 1;
+
+    const pt = curve.getPoint(tracer.userData.progress);
+    tracer.position.copy(pt).sub(parentPath.position);
+
+    // Pulse tracer
+    const pulse = 0.7 + Math.sin(t * 4) * 0.3;
+    tracer.userData.tracerMat.opacity = parentPath.userData.targetOpacity * pulse;
+    tracer.userData.glowMat.opacity = parentPath.userData.targetOpacity * pulse * 0.4;
+  });
+
+  // Update extras
+  // Bounding boxes
+  ['groundingBox', 'denseRegion', 'sparseRegion', 'wrongRegion'].forEach(key => {
+    const extra = allExtras[key];
+    if (!extra) return;
+    const targetOp = extra.userData.targetOpacity;
+    extra.children.forEach(child => {
+      if (child.material) {
+        if (child.isLineSegments) {
+          lerpOpacity(child.material, targetOp * 0.3, lerpSpeed);
+        } else {
+          lerpOpacity(child.material, targetOp * 0.03, lerpSpeed);
+        }
+      }
+    });
+  });
+
+  // Doc anchor lines
+  if (allExtras.docLines) {
+    const targetOp = allExtras.docLines.userData.targetOpacity;
+    allExtras.docLines.children.forEach(child => {
+      if (child.material) {
+        lerpOpacity(child.material, targetOp * 0.5, lerpSpeed);
+      }
+    });
+  }
+
+  // Region labels
+  [truthLabel, sparseLabel, wrongLabel].forEach(label => {
+    if (label.userData && label.userData.targetOpacity !== undefined) {
+      lerpOpacity(label.material, label.userData.targetOpacity, lerpSpeed);
+    }
+  });
+
+  // Grid subtle rotation
+  gridHelper.rotation.y = t * 0.015;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+</script>
+</body>
+</html>

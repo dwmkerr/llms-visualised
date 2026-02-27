@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Temperature: Controlling Creativity</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-cat      { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .word-ball     { background: rgba(102,187,106,0.2);  color: #2e7d32; }
+  .word-car      { background: rgba(255,183,77,0.2);   color: #e68a00; }
+  .word-dream    { background: rgba(171,71,188,0.2);   color: #7b1fa2; }
+  .word-memory   { background: rgba(239,83,80,0.2);    color: #c62828; }
+  .word-chicken  { background: rgba(255,167,38,0.2);   color: #e65100; }
+  .word-moon     { background: rgba(38,166,154,0.2);   color: #00695c; }
+  .word-temp     { background: rgba(255,112,67,0.2);   color: #d84315; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   DATA — candidate next words for "The dog chased the..."
+   =================================================================== */
+
+const WORDS = [
+  { name: 'cat',     prob: 0.40, color: 0x42a5f5, cssClass: 'word-cat' },
+  { name: 'ball',    prob: 0.22, color: 0x66bb6a, cssClass: 'word-ball' },
+  { name: 'car',     prob: 0.13, color: 0xffb74d, cssClass: 'word-car' },
+  { name: 'chicken', prob: 0.09, color: 0xffa726, cssClass: 'word-chicken' },
+  { name: 'dream',   prob: 0.05, color: 0xab47bc, cssClass: 'word-dream' },
+  { name: 'memory',  prob: 0.04, color: 0xef5350, cssClass: 'word-memory' },
+  { name: 'moon',    prob: 0.04, color: 0x26a69a, cssClass: 'word-moon' },
+];
+
+// Base 3D positions arranged in a loose orbit around center
+const BASE_POSITIONS = [
+  { x:  0.0, y:  1.8, z:  0.0 },   // cat — top center
+  { x:  2.8, y:  0.6, z:  0.5 },   // ball
+  { x: -2.5, y:  0.2, z:  1.2 },   // car
+  { x:  1.8, y: -1.8, z: -1.0 },   // chicken
+  { x: -1.5, y: -2.2, z: -1.5 },   // dream
+  { x: -3.2, y: -1.0, z: -0.5 },   // memory
+  { x:  3.0, y: -0.8, z:  1.5 },   // moon
+];
+
+// Apply softmax with temperature to raw logits
+function softmax(probs, temperature) {
+  // Convert base probs to logits (inverse softmax approximation)
+  const logits = probs.map(p => Math.log(p + 1e-10));
+  const scaled = logits.map(l => l / Math.max(temperature, 0.01));
+  const maxScaled = Math.max(...scaled);
+  const exps = scaled.map(s => Math.exp(s - maxScaled));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map(e => e / sum);
+}
+
+function getTemperatureProbs(temperature) {
+  const baseProbs = WORDS.map(w => w.prob);
+  return softmax(baseProbs, temperature);
+}
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+function tag(word) {
+  return `<span class="word-tag ${word.cssClass}">${word.name}</span>`;
+}
+
+function tempTag(val) {
+  return `<span class="word-tag word-temp">${val}</span>`;
+}
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'The model sees possibilities',
+    body: `<p>Given the prompt <strong>"The dog chased the..."</strong>, the model doesn't just pick one word. It calculates a <strong>probability</strong> for every possible next word.</p>
+           <p>Each sphere represents a candidate: ${tag(WORDS[0])} is the most likely, followed by ${tag(WORDS[1])}, ${tag(WORDS[2])}, and others like ${tag(WORDS[4])} or ${tag(WORDS[5])}.</p>
+           <p>Sphere size and brightness reflect probability. Bigger and brighter means more likely.</p>
+           <p>But how does the model <em>choose</em> among them? That's where <strong>temperature</strong> comes in.</p>`,
+    temperature: 1.0,
+    camera: { x: 0, y: 0, z: 14 },
+    target: { x: 0, y: 0, z: 0 },
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Temperature = 0: Always the obvious',
+    body: `<p>At ${tempTag('temperature = 0')}, the model uses <strong>greedy decoding</strong>: it always picks the single most probable word.</p>
+           <p>${tag(WORDS[0])} dominates completely. Its sphere grows huge and bright while every other option fades to near-invisibility.</p>
+           <p>The output is <strong>deterministic</strong> — run the same prompt a thousand times and you'll always get "cat." No variety, no surprises.</p>
+           <p>This is useful when you need <em>consistency and precision</em>, but the writing feels mechanical and predictable.</p>`,
+    temperature: 0.01,
+    camera: { x: 0, y: 1, z: 14 },
+    target: { x: 0, y: 0.5, z: 0 },
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Temperature = 0.7: Balanced creativity',
+    body: `<p>At ${tempTag('temperature = 0.7')}, the probability distribution <strong>spreads out slightly</strong>. The top choice still dominates, but alternatives become viable.</p>
+           <p>${tag(WORDS[0])} is still the largest sphere, but ${tag(WORDS[1])} and ${tag(WORDS[2])} are now visible, plausible options. The model might occasionally pick them.</p>
+           <p>This is the <strong>sweet spot</strong> for most tasks — the output is usually sensible but has enough variety to feel natural and avoid repetition.</p>
+           <p>Most chat applications use a temperature around 0.7.</p>`,
+    temperature: 0.7,
+    camera: { x: 2, y: 1, z: 13 },
+    target: { x: 0, y: 0, z: 0 },
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Temperature = 1.5: Wild and unpredictable',
+    body: `<p>At ${tempTag('temperature = 1.5')}, the probability distribution is <strong>flattened</strong>. Rare words become almost as likely as common ones.</p>
+           <p>Now ${tag(WORDS[4])}, ${tag(WORDS[5])}, and ${tag(WORDS[6])} swell to nearly the same size as ${tag(WORDS[0])}. Any word could be chosen.</p>
+           <p>The 3D space feels <strong>chaotic</strong> — there's no clear winner. The model becomes wildly creative but also unpredictable, sometimes producing nonsensical output.</p>
+           <p>High temperature is like rolling a nearly fair die instead of a heavily loaded one.</p>`,
+    temperature: 1.5,
+    camera: { x: -2, y: 2, z: 13 },
+    target: { x: 0, y: 0, z: 0 },
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'The right temperature for the task',
+    body: `<p>Temperature controls the tradeoff between <strong>predictability</strong> and <strong>creativity</strong>.</p>
+           <p>For a <strong>legal contract</strong> or code, use low temperature (0 &ndash; 0.3). You want the most probable, correct answer every time.</p>
+           <p>For a <strong>poem</strong>, story, or brainstorming, use high temperature (0.8 &ndash; 1.5). You want surprise, variety, and creative leaps.</p>
+           <p>There is no single "best" temperature — it depends entirely on what you need. The model's raw knowledge stays the same; temperature only reshapes <em>how it samples from what it knows</em>.</p>`,
+    temperature: 0.85,
+    camera: { x: 3, y: 2, z: 14 },
+    target: { x: 0, y: 0, z: 0 },
+    showSplit: true,
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.012);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 0, 14);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 6;
+controls.maxDistance = 30;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight.position.set(-5, 5, 5);
+scene.add(pointLight);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(20, 20, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   PROMPT LABEL — "The dog chased the..."
+   =================================================================== */
+
+const promptSprite = makePromptSprite('The dog chased the...');
+promptSprite.position.set(0, 4.2, 0);
+scene.add(promptSprite);
+
+function makePromptSprite(text) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 64;
+
+  ctx.font = 'bold 28px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 32;
+  const ph = 44;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.8)';
+  roundRect(ctx, px, py, pw, ph, 10);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  roundRect(ctx, px, py, pw, ph, 10);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(7, 0.875, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   TEMPERATURE GAUGE — floating in 3D
+   =================================================================== */
+
+const tempGaugeGroup = new THREE.Group();
+tempGaugeGroup.position.set(0, -4.0, 0);
+scene.add(tempGaugeGroup);
+
+// Gauge background bar
+const gaugeWidth = 8;
+const gaugeHeight = 0.3;
+const gaugeBgGeo = new THREE.PlaneGeometry(gaugeWidth, gaugeHeight);
+const gaugeBgMat = new THREE.MeshBasicMaterial({ color: 0x222233, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+const gaugeBg = new THREE.Mesh(gaugeBgGeo, gaugeBgMat);
+tempGaugeGroup.add(gaugeBg);
+
+// Gauge fill bar
+const gaugeFillGeo = new THREE.PlaneGeometry(gaugeWidth, gaugeHeight);
+const gaugeFillMat = new THREE.MeshBasicMaterial({ color: 0xff7043, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+const gaugeFill = new THREE.Mesh(gaugeFillGeo, gaugeFillMat);
+gaugeFill.position.z = 0.01;
+tempGaugeGroup.add(gaugeFill);
+
+// Gauge indicator sphere
+const indicatorGeo = new THREE.SphereGeometry(0.2, 16, 16);
+const indicatorMat = new THREE.MeshBasicMaterial({ color: 0xff7043 });
+const indicator = new THREE.Mesh(indicatorGeo, indicatorMat);
+indicator.position.z = 0.05;
+tempGaugeGroup.add(indicator);
+
+// Gauge label sprites
+const gaugeLabelLow = makeGaugeLabel('0', 0xaaaaaa);
+gaugeLabelLow.position.set(-gaugeWidth / 2, -0.5, 0);
+tempGaugeGroup.add(gaugeLabelLow);
+
+const gaugeLabelMid = makeGaugeLabel('0.7', 0xaaaaaa);
+gaugeLabelMid.position.set(-gaugeWidth / 2 + gaugeWidth * (0.7 / 2.0), -0.5, 0);
+tempGaugeGroup.add(gaugeLabelMid);
+
+const gaugeLabelHigh = makeGaugeLabel('2.0', 0xaaaaaa);
+gaugeLabelHigh.position.set(gaugeWidth / 2, -0.5, 0);
+tempGaugeGroup.add(gaugeLabelHigh);
+
+const gaugeTitleSprite = makeGaugeLabel('TEMPERATURE', 0xff7043);
+gaugeTitleSprite.position.set(0, 0.6, 0);
+gaugeTitleSprite.scale.set(3, 0.5, 1);
+tempGaugeGroup.add(gaugeTitleSprite);
+
+// Current temp value label — updated dynamically
+let tempValueCanvas, tempValueCtx, tempValueTex, tempValueSprite;
+{
+  tempValueCanvas = document.createElement('canvas');
+  tempValueCtx = tempValueCanvas.getContext('2d');
+  tempValueCanvas.width = 128;
+  tempValueCanvas.height = 48;
+  tempValueTex = new THREE.CanvasTexture(tempValueCanvas);
+  tempValueTex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tempValueTex, transparent: true, depthTest: false });
+  tempValueSprite = new THREE.Sprite(mat);
+  tempValueSprite.scale.set(2, 0.75, 1);
+  tempValueSprite.position.set(0, -1.2, 0);
+  tempGaugeGroup.add(tempValueSprite);
+}
+
+function updateTempValueLabel(val) {
+  tempValueCtx.clearRect(0, 0, 128, 48);
+  tempValueCtx.font = 'bold 28px Inter, Arial, sans-serif';
+  tempValueCtx.textAlign = 'center';
+  tempValueCtx.textBaseline = 'middle';
+  tempValueCtx.fillStyle = '#ff7043';
+  tempValueCtx.fillText(val.toFixed(2), 64, 24);
+  tempValueTex.needsUpdate = true;
+}
+
+function makeGaugeLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 64;
+  canvas.height = 32;
+  ctx.font = 'bold 18px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, 32, 16);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(1.5, 0.75, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   SPLIT-VIEW LABELS (Stage 5)
+   =================================================================== */
+
+const splitGroup = new THREE.Group();
+scene.add(splitGroup);
+
+const splitLabelLeft = makeSplitLabel('Legal Contract', 'T = 0.1', 0x42a5f5);
+splitLabelLeft.position.set(-4.5, 3.5, 0);
+splitLabelLeft.material.opacity = 0;
+splitGroup.add(splitLabelLeft);
+
+const splitLabelRight = makeSplitLabel('Write a Poem', 'T = 1.2', 0xab47bc);
+splitLabelRight.position.set(4.5, 3.5, 0);
+splitLabelRight.material.opacity = 0;
+splitGroup.add(splitLabelRight);
+
+// Divider line
+const dividerGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0, -3, 0),
+  new THREE.Vector3(0, 4.5, 0),
+]);
+const dividerMat = new THREE.LineBasicMaterial({ color: 0x444466, transparent: true, opacity: 0 });
+const dividerLine = new THREE.Line(dividerGeo, dividerMat);
+splitGroup.add(dividerLine);
+
+function makeSplitLabel(line1, line2, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 96;
+
+  const c = new THREE.Color(color);
+  const css = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, 10, 8, 236, 80, 10);
+  ctx.fill();
+
+  ctx.font = 'bold 24px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = css;
+  ctx.fillText(line1, 128, 34);
+
+  ctx.font = '600 20px Inter, Arial, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText(line2, 128, 62);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(4, 1.5, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   WORD SPHERES & LABELS
+   =================================================================== */
+
+const wordObjects = WORDS.map((w, i) => {
+  // Main sphere — initial small size, will be scaled by probability
+  const geo = new THREE.SphereGeometry(1, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.color,
+    emissive: w.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.scale.setScalar(0.3);
+
+  // Glow sphere
+  const glowGeo = new THREE.SphereGeometry(1, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: w.color,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.scale.setScalar(1.6);
+  mesh.add(glow);
+
+  scene.add(mesh);
+
+  // Text label
+  const label = makeTextSprite(w.name, w.color);
+  scene.add(label);
+
+  return {
+    mesh, label, glow,
+    targetPos: new THREE.Vector3(BASE_POSITIONS[i].x, BASE_POSITIONS[i].y, BASE_POSITIONS[i].z),
+    targetScale: 0.3,
+    targetOpacity: 1,
+    targetEmissive: 0.35,
+  };
+});
+
+function makeTextSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = 'bold 32px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 24;
+  const ph = 40;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(3, 0.75, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/* ===================================================================
+   PROBABILITY LINES — connect spheres to a center point
+   =================================================================== */
+
+const probLineGroup = new THREE.Group();
+scene.add(probLineGroup);
+
+const probLines = WORDS.map((w, i) => {
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(6); // 2 points x 3
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const mat = new THREE.LineBasicMaterial({
+    color: w.color,
+    transparent: true,
+    opacity: 0.15,
+  });
+  const line = new THREE.Line(geo, mat);
+  probLineGroup.add(line);
+  return { line, geo };
+});
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+let currentTemp = 1.0;
+let targetTemp = 1.0;
+let showGauge = false;
+let targetGaugeOpacity = 0;
+let showSplit = false;
+let targetSplitOpacity = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+// Build progress dots
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+const animState = {
+  cameraTarget: new THREE.Vector3(0, 0, 14),
+  controlsTarget: new THREE.Vector3(0, 0, 0),
+};
+
+function setTargetsForStage(stageIdx) {
+  const s = STAGES[stageIdx];
+
+  targetTemp = s.temperature;
+  animState.cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  animState.controlsTarget.set(s.target.x, s.target.y, s.target.z);
+
+  // Show gauge from stage 2 onwards
+  showGauge = stageIdx >= 1;
+  targetGaugeOpacity = showGauge ? 1 : 0;
+
+  // Split view only on stage 5
+  showSplit = !!s.showSplit;
+  targetSplitOpacity = showSplit ? 1 : 0;
+
+  updateWordTargets(s.temperature, stageIdx);
+}
+
+function updateWordTargets(temperature, stageIdx) {
+  const probs = getTemperatureProbs(temperature);
+
+  if (stageIdx === 4 && STAGES[stageIdx].showSplit) {
+    // Stage 5: split into two groups
+    const lowProbs = getTemperatureProbs(0.1);
+    const highProbs = getTemperatureProbs(1.2);
+
+    wordObjects.forEach((wo, i) => {
+      // Position words in two clusters
+      const isLeft = i < 4;
+      const xOffset = isLeft ? -4.5 : 4.5;
+      const localProbs = isLeft ? lowProbs : highProbs;
+      const localIdx = isLeft ? i : i;
+
+      const scale = 0.15 + localProbs[localIdx] * 2.5;
+
+      // Arrange in a small circle within each cluster
+      const angleStep = (2 * Math.PI) / (isLeft ? 4 : 3);
+      const idx = isLeft ? i : i - 4;
+      const angle = idx * angleStep - Math.PI / 2;
+      const radius = 1.8;
+
+      wo.targetPos.set(
+        xOffset + Math.cos(angle) * radius,
+        Math.sin(angle) * radius,
+        0
+      );
+      wo.targetScale = scale;
+      wo.targetOpacity = 0.3 + localProbs[localIdx] * 3;
+      wo.targetEmissive = 0.1 + localProbs[localIdx] * 2;
+    });
+  } else {
+    wordObjects.forEach((wo, i) => {
+      const scale = 0.15 + probs[i] * 2.5;
+      wo.targetPos.set(BASE_POSITIONS[i].x, BASE_POSITIONS[i].y, BASE_POSITIONS[i].z);
+      wo.targetScale = scale;
+      wo.targetOpacity = Math.max(0.08, probs[i] * 4);
+      wo.targetEmissive = 0.1 + probs[i] * 2;
+    });
+  }
+}
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+setTargetsForStage(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+// Set initial positions
+wordObjects.forEach((wo, i) => {
+  wo.mesh.position.copy(wo.targetPos);
+  wo.label.position.set(wo.targetPos.x, wo.targetPos.y + 1.2, wo.targetPos.z);
+});
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera3D.aspect = w / h;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Lerp temperature
+  currentTemp += (targetTemp - currentTemp) * lerpSpeed * 1.2;
+
+  // Update gauge
+  const tempNorm = Math.min(currentTemp / 2.0, 1.0);
+  const gaugeX = -gaugeWidth / 2 + tempNorm * gaugeWidth;
+  indicator.position.x += (gaugeX - indicator.position.x) * lerpSpeed * 2;
+  indicator.position.y = 0;
+
+  // Scale the fill bar to match
+  const fillScale = Math.max(0.001, tempNorm);
+  gaugeFill.scale.x = fillScale;
+  gaugeFill.position.x = -gaugeWidth / 2 * (1 - fillScale);
+
+  // Gauge opacity
+  const gaugeTargetOp = targetGaugeOpacity;
+  gaugeBgMat.opacity += (gaugeTargetOp * 0.6 - gaugeBgMat.opacity) * lerpSpeed;
+  gaugeFillMat.opacity += (gaugeTargetOp * 0.8 - gaugeFillMat.opacity) * lerpSpeed;
+  indicatorMat.opacity = gaugeFillMat.opacity;
+  gaugeLabelLow.material.opacity += (gaugeTargetOp - gaugeLabelLow.material.opacity) * lerpSpeed;
+  gaugeLabelMid.material.opacity += (gaugeTargetOp - gaugeLabelMid.material.opacity) * lerpSpeed;
+  gaugeLabelHigh.material.opacity += (gaugeTargetOp - gaugeLabelHigh.material.opacity) * lerpSpeed;
+  gaugeTitleSprite.material.opacity += (gaugeTargetOp - gaugeTitleSprite.material.opacity) * lerpSpeed;
+  tempValueSprite.material.opacity += (gaugeTargetOp - tempValueSprite.material.opacity) * lerpSpeed;
+
+  updateTempValueLabel(currentTemp);
+
+  // Split labels opacity
+  splitLabelLeft.material.opacity += (targetSplitOpacity - splitLabelLeft.material.opacity) * lerpSpeed;
+  splitLabelRight.material.opacity += (targetSplitOpacity - splitLabelRight.material.opacity) * lerpSpeed;
+  dividerMat.opacity += (targetSplitOpacity * 0.3 - dividerMat.opacity) * lerpSpeed;
+
+  // Prompt label — always visible but lift for split view
+  const promptTargetY = showSplit ? 5.0 : 4.2;
+  promptSprite.position.y += (promptTargetY - promptSprite.position.y) * lerpSpeed;
+
+  // Dynamically update sphere sizes based on interpolated temperature
+  const liveProbs = getTemperatureProbs(currentTemp);
+
+  // Lerp word positions, scales, opacities
+  wordObjects.forEach((wo, i) => {
+    wo.mesh.position.lerp(wo.targetPos, lerpSpeed);
+
+    // Sphere scale based on probability
+    const targetS = wo.targetScale;
+    const curS = wo.mesh.scale.x;
+    const newS = curS + (targetS - curS) * lerpSpeed;
+    wo.mesh.scale.setScalar(newS);
+
+    // Label position above sphere
+    const labelOffset = Math.max(newS * 1.2, 0.6);
+    wo.label.position.set(
+      wo.mesh.position.x,
+      wo.mesh.position.y + labelOffset,
+      wo.mesh.position.z
+    );
+
+    // Opacity
+    wo.mesh.material.opacity += (wo.targetOpacity - wo.mesh.material.opacity) * lerpSpeed;
+    wo.label.material.opacity += (Math.min(wo.targetOpacity * 1.5, 1) - wo.label.material.opacity) * lerpSpeed;
+
+    // Emissive intensity
+    wo.mesh.material.emissiveIntensity += (wo.targetEmissive - wo.mesh.material.emissiveIntensity) * lerpSpeed;
+
+    // Subtle float animation
+    wo.mesh.position.y += Math.sin(t * 1.2 + i * 1.7) * 0.004;
+
+    // Pulse glow
+    wo.glow.material.opacity = 0.06 + Math.sin(t * 2 + i * 1.3) * 0.04;
+
+    // Update probability connection lines
+    const posAttr = probLines[i].geo.getAttribute('position');
+    posAttr.setXYZ(0, 0, -3.5, 0); // Center bottom
+    posAttr.setXYZ(1, wo.mesh.position.x, wo.mesh.position.y, wo.mesh.position.z);
+    posAttr.needsUpdate = true;
+    probLines[i].line.material.opacity += (wo.targetOpacity * 0.2 - probLines[i].line.material.opacity) * lerpSpeed;
+  });
+
+  // Lerp camera
+  camera3D.position.lerp(animState.cameraTarget, lerpSpeed * 0.7);
+  controls.target.lerp(animState.controlsTarget, lerpSpeed * 0.7);
+
+  // Grid rotation
+  gridHelper.rotation.y = t * 0.02;
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>From Embeddings to Completions</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-chicken   { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .word-salmon    { background: rgba(239,83,80,0.2);   color: #c62828; }
+  .word-dog       { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .word-memory    { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .word-cookbook   { background: rgba(102,187,106,0.2); color: #2e7d32; }
+
+  .word-oven      { background: rgba(255,138,101,0.2); color: #d84315; }
+  .word-kitchen   { background: rgba(255,213,79,0.2);  color: #f9a825; }
+  .word-galaxy    { background: rgba(126,87,194,0.2);  color: #5e35b1; }
+  .word-the       { background: rgba(158,158,158,0.2); color: #616161; }
+  .word-is        { background: rgba(158,158,158,0.2); color: #616161; }
+  .word-in        { background: rgba(158,158,158,0.2); color: #616161; }
+
+  /* ---- Probability bar chart ---- */
+  .prob-chart {
+    margin-top: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .prob-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .prob-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    width: 70px;
+    text-align: right;
+  }
+
+  .prob-bar-bg {
+    flex: 1;
+    height: 20px;
+    background: #e8e8e8;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .prob-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s ease;
+  }
+
+  .prob-pct {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #666;
+    width: 40px;
+  }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   DATA — Original 5 embedding words (positions from v09 final state)
+   =================================================================== */
+
+const WORDS = [
+  { name: 'Chicken',  pos: { x: 3, y: 4, z: -4 },  color: 0xffb74d, cssClass: 'word-chicken' },
+  { name: 'Salmon',   pos: { x: 2, y: 3, z: -4 },   color: 0xef5350, cssClass: 'word-salmon' },
+  { name: 'Dog',      pos: { x: 4, y: -3, z: -4 },   color: 0x42a5f5, cssClass: 'word-dog' },
+  { name: 'Memory',   pos: { x: -4, y: -4, z: 4 },   color: 0xab47bc, cssClass: 'word-memory' },
+  { name: 'Cookbook',  pos: { x: -4, y: 3, z: -2 },   color: 0x66bb6a, cssClass: 'word-cookbook' },
+];
+
+// Sentence path: "The chicken is in the ..."
+// Each word in the sentence gets a position in embedding space tracing a journey
+const SENTENCE_WORDS = [
+  { name: 'The',     pos: { x: -2.0, y: -1.0, z: -2.0 }, color: 0x78909c, cssClass: 'word-the' },
+  { name: 'chicken', pos: { x: 3.0,  y: 4.0,  z: -4.0 }, color: 0xffb74d, cssClass: 'word-chicken' },
+  { name: 'is',      pos: { x: -0.5, y: 0.5,  z: -1.5 }, color: 0x90a4ae, cssClass: 'word-is' },
+  { name: 'in',      pos: { x: -1.0, y: 1.0,  z: -1.0 }, color: 0x90a4ae, cssClass: 'word-in' },
+  { name: 'the',     pos: { x: -1.5, y: 0.0,  z: -1.8 }, color: 0x78909c, cssClass: 'word-the' },
+];
+
+// Candidate next words with probabilities
+const CANDIDATES = [
+  { name: 'oven',    pos: { x: 1.5,  y: 4.5,  z: -3.5 }, color: 0xff8a65, prob: 0.42, cssClass: 'word-oven' },
+  { name: 'kitchen', pos: { x: -0.5, y: 3.5,  z: -2.5 }, color: 0xffd54f, prob: 0.25, cssClass: 'word-kitchen' },
+  { name: 'coop',    pos: { x: 3.5,  y: 2.0,  z: -3.0 }, color: 0x8d6e63, prob: 0.12, cssClass: 'word-cookbook' },
+  { name: 'garden',  pos: { x: -2.5, y: 2.5,  z: -0.5 }, color: 0x81c784, prob: 0.09, cssClass: 'word-cookbook' },
+  { name: 'galaxy',  pos: { x: -5.0, y: -3.5, z: 5.0 },  color: 0x7e57c2, prob: 0.02, cssClass: 'word-galaxy' },
+];
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+function tag(name, cssClass) {
+  return `<span class="word-tag ${cssClass}">${name}</span>`;
+}
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'Words live in space',
+    body: `<p>Recall from embeddings: words like ${tag('Chicken','word-chicken')}, ${tag('Salmon','word-salmon')}, ${tag('Dog','word-dog')}, ${tag('Memory','word-memory')}, and ${tag('Cookbook','word-cookbook')} each occupy a position in a high-dimensional space.</p>
+           <p><strong>Meaning is geometry.</strong> Similar words cluster together. ${tag('Chicken','word-chicken')} and ${tag('Salmon','word-salmon')} are nearby &mdash; both are edible animals. ${tag('Memory','word-memory')} is far from everything else &mdash; it's abstract.</p>
+           <p>This is the landscape an LLM navigates when it generates text. Let's see how.</p>`,
+    setup: 'embeddings',
+    camera: { x: 14, y: 10, z: 14 },
+    target: { x: 0, y: 0, z: 0 },
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'A sentence is a journey',
+    body: `<p>When we write a sentence, each word moves us to a new point in embedding space. The sentence <em>"The chicken is in the..."</em> traces a <strong>path</strong> through meaning-space.</p>
+           <p>${tag('The','word-the')} starts us at a neutral point. Then ${tag('chicken','word-chicken')} jumps us into the animal-food region. ${tag('is','word-is')} and ${tag('in','word-in')} steer us through grammatical space. The final ${tag('the','word-the')} sets us up for what comes next.</p>
+           <p>Watch the glowing trail trace this journey through the space of meaning.</p>`,
+    setup: 'sentence',
+    camera: { x: 10, y: 8, z: 12 },
+    target: { x: 0, y: 1.5, z: -2 },
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'What comes next?',
+    body: `<p>At the end of the path, the model looks around in embedding space. It sees a cloud of <strong>candidate next-words</strong>, each at a different distance from where the sentence has arrived.</p>
+           <p>${tag('oven','word-oven')} is close &mdash; it makes sense after "The chicken is in the..." ${tag('kitchen','word-kitchen')} is nearby too. But ${tag('galaxy','word-galaxy')}? It's very far away in meaning-space.</p>
+           <p>The closer a candidate is, the more likely the model thinks it should come next. Distance becomes probability.</p>`,
+    setup: 'candidates',
+    camera: { x: 8, y: 7, z: 10 },
+    target: { x: 0, y: 1.5, z: -2 },
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Probability from distance',
+    body: `<p>The model converts distances into <strong>probabilities</strong>. Words that are closer in the embedding space &mdash; given the context of the sentence so far &mdash; get higher probability.</p>
+           <p>This is a simplification of what really happens (attention, softmax, and many layers are involved), but the core intuition holds: <strong>nearness in meaning-space correlates with likelihood</strong>.</p>
+           <div class="prob-chart">
+             <div class="prob-row">
+               <span class="prob-label" style="color:#d84315;">oven</span>
+               <div class="prob-bar-bg"><div class="prob-bar" style="width:42%;background:#ff8a65;"></div></div>
+               <span class="prob-pct">42%</span>
+             </div>
+             <div class="prob-row">
+               <span class="prob-label" style="color:#f9a825;">kitchen</span>
+               <div class="prob-bar-bg"><div class="prob-bar" style="width:25%;background:#ffd54f;"></div></div>
+               <span class="prob-pct">25%</span>
+             </div>
+             <div class="prob-row">
+               <span class="prob-label" style="color:#6d4c41;">coop</span>
+               <div class="prob-bar-bg"><div class="prob-bar" style="width:12%;background:#8d6e63;"></div></div>
+               <span class="prob-pct">12%</span>
+             </div>
+             <div class="prob-row">
+               <span class="prob-label" style="color:#43a047;">garden</span>
+               <div class="prob-bar-bg"><div class="prob-bar" style="width:9%;background:#81c784;"></div></div>
+               <span class="prob-pct">9%</span>
+             </div>
+             <div class="prob-row">
+               <span class="prob-label" style="color:#5e35b1;">galaxy</span>
+               <div class="prob-bar-bg"><div class="prob-bar" style="width:2%;background:#7e57c2;"></div></div>
+               <span class="prob-pct">2%</span>
+             </div>
+           </div>`,
+    setup: 'distances',
+    camera: { x: 8, y: 7, z: 10 },
+    target: { x: 0, y: 1.5, z: -2 },
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'This is completion',
+    body: `<p>The highest-probability word &mdash; ${tag('oven','word-oven')} &mdash; gets selected. It joins the path. The trail extends through meaning-space.</p>
+           <p><em>"The chicken is in the <strong>oven</strong>."</em></p>
+           <p>The model picks the most likely next word based on where the sentence has travelled through meaning-space. Then it repeats: from this new position, it looks around again for the next word, and the next, and the next.</p>
+           <p>This is how LLMs generate text &mdash; <strong>one word at a time, navigating a vast space of meaning</strong>.</p>`,
+    setup: 'completion',
+    camera: { x: 10, y: 8, z: 12 },
+    target: { x: 0.5, y: 2, z: -2.5 },
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.012);
+
+const camera3d = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3d.position.set(14, 10, 14);
+
+const controls = new OrbitControls(camera3d, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 8;
+controls.maxDistance = 40;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight.position.set(-5, 5, 5);
+scene.add(pointLight);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(20, 20, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.4;
+scene.add(gridHelper);
+
+/* ===================================================================
+   HELPER: TEXT SPRITES
+   =================================================================== */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color, fontSize) {
+  fontSize = fontSize || 32;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 24;
+  const ph = 40;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(3, 0.75, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   WORD SPHERES (the 5 embedding words)
+   =================================================================== */
+
+const embeddingGroup = new THREE.Group();
+scene.add(embeddingGroup);
+
+const embeddingSpheres = WORDS.map((w) => {
+  const geo = new THREE.SphereGeometry(0.35, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.color,
+    emissive: w.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(w.pos.x, w.pos.y, w.pos.z);
+
+  const glowGeo = new THREE.SphereGeometry(0.55, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: w.color,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+  embeddingGroup.add(mesh);
+
+  const label = makeTextSprite(w.name, w.color);
+  label.position.set(w.pos.x, w.pos.y + 0.9, w.pos.z);
+  embeddingGroup.add(label);
+
+  return { mesh, label, glow, basePos: new THREE.Vector3(w.pos.x, w.pos.y, w.pos.z) };
+});
+
+// Dim connection lines between embedding words
+const embeddingConnGroup = new THREE.Group();
+scene.add(embeddingConnGroup);
+
+for (let i = 0; i < WORDS.length; i++) {
+  for (let j = i + 1; j < WORDS.length; j++) {
+    const pi = WORDS[i].pos;
+    const pj = WORDS[j].pos;
+    const dist = Math.sqrt((pi.x-pj.x)**2 + (pi.y-pj.y)**2 + (pi.z-pj.z)**2);
+    const alpha = Math.max(0, 1 - dist / 12) * 0.25;
+    if (alpha < 0.02) continue;
+
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(pi.x, pi.y, pi.z),
+      new THREE.Vector3(pj.x, pj.y, pj.z),
+    ]);
+    const ci = new THREE.Color(WORDS[i].color);
+    const cj = new THREE.Color(WORDS[j].color);
+    const mat = new THREE.LineBasicMaterial({
+      color: ci.clone().lerp(cj, 0.5),
+      transparent: true,
+      opacity: alpha,
+    });
+    embeddingConnGroup.add(new THREE.Line(geo, mat));
+  }
+}
+
+/* ===================================================================
+   SENTENCE PATH (trail through embedding space)
+   =================================================================== */
+
+const sentenceGroup = new THREE.Group();
+scene.add(sentenceGroup);
+
+// Sentence point spheres
+const sentenceSpheres = SENTENCE_WORDS.map((sw) => {
+  const geo = new THREE.SphereGeometry(0.22, 24, 24);
+  const mat = new THREE.MeshStandardMaterial({
+    color: sw.color,
+    emissive: sw.color,
+    emissiveIntensity: 0.5,
+    roughness: 0.3,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(sw.pos.x, sw.pos.y, sw.pos.z);
+
+  const glowGeo = new THREE.SphereGeometry(0.35, 24, 24);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: sw.color,
+    transparent: true,
+    opacity: 0,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+  sentenceGroup.add(mesh);
+
+  const label = makeTextSprite(sw.name, sw.color, 26);
+  label.position.set(sw.pos.x, sw.pos.y + 0.7, sw.pos.z);
+  label.material.opacity = 0;
+  sentenceGroup.add(label);
+
+  return { mesh, label, glow, mat, glowMat, targetOpacity: 0 };
+});
+
+// Sentence trail lines (glowing segments between sentence words)
+const trailLines = [];
+for (let i = 0; i < SENTENCE_WORDS.length - 1; i++) {
+  const p1 = SENTENCE_WORDS[i].pos;
+  const p2 = SENTENCE_WORDS[i + 1].pos;
+
+  // Subdivide for a smoother glow effect
+  const curve = new THREE.LineCurve3(
+    new THREE.Vector3(p1.x, p1.y, p1.z),
+    new THREE.Vector3(p2.x, p2.y, p2.z)
+  );
+  const points = curve.getPoints(20);
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0x80cbc4,
+    transparent: true,
+    opacity: 0,
+    linewidth: 2,
+  });
+  const line = new THREE.Line(geo, mat);
+  sentenceGroup.add(line);
+  trailLines.push({ line, mat, targetOpacity: 0 });
+}
+
+// Glowing tube along the sentence path for a thicker trail effect
+const sentencePathPoints = SENTENCE_WORDS.map(sw => new THREE.Vector3(sw.pos.x, sw.pos.y, sw.pos.z));
+const sentenceCurve = new THREE.CatmullRomCurve3(sentencePathPoints, false, 'centripetal', 0.5);
+const tubeGeo = new THREE.TubeGeometry(sentenceCurve, 64, 0.06, 8, false);
+const tubeMat = new THREE.MeshBasicMaterial({
+  color: 0x80cbc4,
+  transparent: true,
+  opacity: 0,
+});
+const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+sentenceGroup.add(tubeMesh);
+let tubeTargetOpacity = 0;
+
+/* ===================================================================
+   CANDIDATE NEXT-WORDS
+   =================================================================== */
+
+const candidateGroup = new THREE.Group();
+scene.add(candidateGroup);
+
+const candidateSpheres = CANDIDATES.map((c) => {
+  const radius = 0.15 + c.prob * 0.5;
+  const geo = new THREE.SphereGeometry(radius, 24, 24);
+  const mat = new THREE.MeshStandardMaterial({
+    color: c.color,
+    emissive: c.color,
+    emissiveIntensity: 0.4,
+    roughness: 0.3,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(c.pos.x, c.pos.y, c.pos.z);
+
+  // Glow proportional to probability
+  const glowGeo = new THREE.SphereGeometry(radius * 1.6, 24, 24);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: c.color,
+    transparent: true,
+    opacity: 0,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+  candidateGroup.add(mesh);
+
+  const label = makeTextSprite(c.name, c.color, 26);
+  label.position.set(c.pos.x, c.pos.y + radius + 0.5, c.pos.z);
+  label.material.opacity = 0;
+  candidateGroup.add(label);
+
+  return { mesh, label, glow, mat, glowMat, radius, prob: c.prob, targetOpacity: 0, targetScale: 1 };
+});
+
+/* ===================================================================
+   DISTANCE LINES (from sentence endpoint to candidates)
+   =================================================================== */
+
+const distanceGroup = new THREE.Group();
+scene.add(distanceGroup);
+
+const endPoint = SENTENCE_WORDS[SENTENCE_WORDS.length - 1].pos;
+const distanceLines = CANDIDATES.map((c) => {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(endPoint.x, endPoint.y, endPoint.z),
+    new THREE.Vector3(c.pos.x, c.pos.y, c.pos.z),
+  ]);
+  const mat = new THREE.LineDashedMaterial({
+    color: c.color,
+    transparent: true,
+    opacity: 0,
+    dashSize: 0.3,
+    gapSize: 0.15,
+  });
+  const line = new THREE.Line(geo, mat);
+  line.computeLineDistances();
+  distanceGroup.add(line);
+  return { line, mat, targetOpacity: 0 };
+});
+
+/* ===================================================================
+   COMPLETION PATH (oven joins the trail)
+   =================================================================== */
+
+const completionGroup = new THREE.Group();
+scene.add(completionGroup);
+
+// Extended trail segment from last sentence word to "oven"
+const ovenPos = CANDIDATES[0].pos;
+const completionCurve = new THREE.LineCurve3(
+  new THREE.Vector3(endPoint.x, endPoint.y, endPoint.z),
+  new THREE.Vector3(ovenPos.x, ovenPos.y, ovenPos.z)
+);
+const completionPoints = completionCurve.getPoints(20);
+const completionTubeGeo = new THREE.TubeGeometry(
+  new THREE.CatmullRomCurve3([
+    new THREE.Vector3(endPoint.x, endPoint.y, endPoint.z),
+    new THREE.Vector3(ovenPos.x, ovenPos.y, ovenPos.z),
+  ], false, 'centripetal', 0.5),
+  32, 0.06, 8, false
+);
+const completionTubeMat = new THREE.MeshBasicMaterial({
+  color: 0xff8a65,
+  transparent: true,
+  opacity: 0,
+});
+const completionTubeMesh = new THREE.Mesh(completionTubeGeo, completionTubeMat);
+completionGroup.add(completionTubeMesh);
+let completionTubeTargetOpacity = 0;
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+// Build progress dots
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+/* ===================================================================
+   ANIMATION STATE
+   =================================================================== */
+
+const animState = {
+  cameraTarget: new THREE.Vector3(14, 10, 14),
+  controlsTarget: new THREE.Vector3(0, 0, 0),
+  embeddingOpacity: 1,
+  // Per-stage visibility targets
+  showSentence: false,
+  showCandidates: false,
+  showDistances: false,
+  showCompletion: false,
+  selectedOven: false,
+};
+
+function setTargetsForStage(stageIdx) {
+  const s = STAGES[stageIdx];
+  animState.cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  animState.controlsTarget.set(s.target.x, s.target.y, s.target.z);
+
+  // Reset all
+  animState.showSentence = false;
+  animState.showCandidates = false;
+  animState.showDistances = false;
+  animState.showCompletion = false;
+  animState.selectedOven = false;
+
+  // Embedding words always partially visible, dimmer after stage 1
+  animState.embeddingOpacity = stageIdx === 0 ? 1 : 0.25;
+
+  switch (s.setup) {
+    case 'embeddings':
+      // Just the 5 embedding words
+      break;
+    case 'sentence':
+      animState.showSentence = true;
+      break;
+    case 'candidates':
+      animState.showSentence = true;
+      animState.showCandidates = true;
+      break;
+    case 'distances':
+      animState.showSentence = true;
+      animState.showCandidates = true;
+      animState.showDistances = true;
+      break;
+    case 'completion':
+      animState.showSentence = true;
+      animState.showCandidates = true;
+      animState.showCompletion = true;
+      animState.selectedOven = true;
+      break;
+  }
+
+  // Set sentence visibility targets
+  sentenceSpheres.forEach(ss => {
+    ss.targetOpacity = animState.showSentence ? 1 : 0;
+  });
+  trailLines.forEach(tl => {
+    tl.targetOpacity = animState.showSentence ? 0.6 : 0;
+  });
+  tubeTargetOpacity = animState.showSentence ? 0.5 : 0;
+
+  // Set candidate visibility targets
+  candidateSpheres.forEach((cs, i) => {
+    if (animState.showCandidates) {
+      if (animState.selectedOven) {
+        // Only oven is fully visible and large; others fade
+        if (i === 0) {
+          cs.targetOpacity = 1;
+          cs.targetScale = 1.6;
+        } else {
+          cs.targetOpacity = 0.15;
+          cs.targetScale = 0.6;
+        }
+      } else {
+        cs.targetOpacity = 0.3 + cs.prob * 1.2;
+        cs.targetScale = 1;
+      }
+    } else {
+      cs.targetOpacity = 0;
+      cs.targetScale = 1;
+    }
+  });
+
+  // Distance lines
+  distanceLines.forEach(dl => {
+    dl.targetOpacity = animState.showDistances ? 0.5 : 0;
+  });
+
+  // Completion tube
+  completionTubeTargetOpacity = animState.showCompletion ? 0.7 : 0;
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+setTargetsForStage(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera3d.aspect = w / h;
+  camera3d.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Lerp camera
+  camera3d.position.lerp(animState.cameraTarget, lerpSpeed * 0.7);
+  controls.target.lerp(animState.controlsTarget, lerpSpeed * 0.7);
+
+  // --- Embedding spheres ---
+  const embAlpha = animState.embeddingOpacity;
+  embeddingSpheres.forEach((es, i) => {
+    const currentOp = es.mesh.material.opacity !== undefined ? es.mesh.material.opacity : 1;
+    const newOp = currentOp + (embAlpha - currentOp) * lerpSpeed;
+
+    es.mesh.material.transparent = true;
+    es.mesh.material.opacity = newOp;
+    es.glow.material.opacity = (0.08 + Math.sin(t * 2 + i * 1.3) * 0.04) * newOp;
+    es.label.material.opacity = newOp;
+
+    // Subtle float
+    es.mesh.position.y = es.basePos.y + Math.sin(t * 1.2 + i * 1.7) * 0.05;
+    es.label.position.y = es.mesh.position.y + 0.9;
+  });
+
+  // Embedding connections fade with spheres
+  embeddingConnGroup.children.forEach(line => {
+    const baseOp = parseFloat(line.userData?.baseOpacity ?? line.material.opacity);
+    if (!line.userData.baseOpacity) line.userData.baseOpacity = line.material.opacity;
+    line.material.opacity = (line.userData.baseOpacity || 0.15) * embAlpha;
+  });
+
+  // --- Sentence spheres ---
+  sentenceSpheres.forEach((ss, i) => {
+    const targetOp = ss.targetOpacity;
+    ss.mat.opacity += (targetOp - ss.mat.opacity) * lerpSpeed;
+    ss.glowMat.opacity = ss.mat.opacity * 0.15;
+    ss.label.material.opacity += (targetOp - ss.label.material.opacity) * lerpSpeed;
+
+    // Float
+    ss.mesh.position.y = SENTENCE_WORDS[i].pos.y + Math.sin(t * 1.5 + i * 2.1) * 0.04;
+    ss.label.position.y = ss.mesh.position.y + 0.7;
+  });
+
+  // Trail lines
+  trailLines.forEach(tl => {
+    tl.mat.opacity += (tl.targetOpacity - tl.mat.opacity) * lerpSpeed;
+  });
+
+  // Sentence tube
+  tubeMat.opacity += (tubeTargetOpacity - tubeMat.opacity) * lerpSpeed;
+
+  // --- Candidate spheres ---
+  candidateSpheres.forEach((cs, i) => {
+    cs.mat.opacity += (cs.targetOpacity - cs.mat.opacity) * lerpSpeed;
+    cs.glowMat.opacity = cs.mat.opacity * 0.12;
+    cs.label.material.opacity += (cs.targetOpacity - cs.label.material.opacity) * lerpSpeed;
+
+    // Scale lerp
+    const currentScale = cs.mesh.scale.x;
+    const newScale = currentScale + (cs.targetScale - currentScale) * lerpSpeed;
+    cs.mesh.scale.setScalar(newScale);
+
+    // Pulse for oven when selected
+    if (animState.selectedOven && i === 0) {
+      const pulse = 1 + Math.sin(t * 3) * 0.12;
+      cs.mesh.scale.setScalar(newScale * pulse);
+      cs.mat.emissiveIntensity = 0.6 + Math.sin(t * 3) * 0.3;
+    } else {
+      cs.mat.emissiveIntensity = 0.4;
+    }
+
+    // Float
+    cs.mesh.position.y = CANDIDATES[i].pos.y + Math.sin(t * 1.3 + i * 1.9) * 0.04;
+    cs.label.position.y = cs.mesh.position.y + cs.radius + 0.5;
+  });
+
+  // Distance lines
+  distanceLines.forEach(dl => {
+    dl.mat.opacity += (dl.targetOpacity - dl.mat.opacity) * lerpSpeed;
+  });
+
+  // Completion tube
+  completionTubeMat.opacity += (completionTubeTargetOpacity - completionTubeMat.opacity) * lerpSpeed;
+
+  // Grid subtle rotation
+  gridHelper.rotation.y = t * 0.02;
+
+  controls.update();
+  renderer.render(scene, camera3d);
+}
+
+animate();
+
+</script>
+</body>
+</html>

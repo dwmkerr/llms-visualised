@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Complete Picture: From Text In to Text Out</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .highlight {
+    display: inline;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+  }
+
+  .hl-token    { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .hl-vector   { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .hl-layer    { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .hl-predict  { background: rgba(102,187,106,0.2); color: #2e7d32; }
+  .hl-cycle    { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'It starts with text',
+    body: `<p>First, your text is broken into <span class="highlight hl-token">tokens</span> &mdash; pieces of words the model can process. <strong>"The"</strong> and <strong>"chicken"</strong> become separate tokens.</p>
+           <p>Tokenization splits text into a vocabulary the model knows. Common words stay whole; rare words get split into sub-pieces. Each token gets an integer ID.</p>
+           <p>Watch the prompt appear, then shatter into its component tokens.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Tokens become vectors',
+    body: `<p>Each token is mapped to a high-dimensional <span class="highlight hl-vector">vector</span> &mdash; a point in embedding space. This is where meaning lives.</p>
+           <p><strong>"The"</strong> lands in one region of this space, <strong>"chicken"</strong> in another. The connecting line shows their sequence order &mdash; the model remembers which came first.</p>
+           <p>These vectors are learned during training. Words with similar roles end up in similar regions.</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'The transformer processes',
+    body: `<p>The transformer's <span class="highlight hl-layer">layers</span> process these vectors &mdash; attention lets words influence each other, building richer representations at each layer.</p>
+           <p>Watch the token vectors pass through stacked transformer layers. At each layer, <strong>attention lines</strong> flash between them &mdash; "The" informs "chicken" and vice versa.</p>
+           <p>They emerge transformed: the same tokens, but now carrying contextual understanding.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'A prediction emerges',
+    body: `<p>The final layer produces a <span class="highlight hl-predict">probability distribution</span> over all possible next tokens. The model samples from this distribution to pick one.</p>
+           <p>The last token's representation becomes a bright beacon. A cloud of candidate words radiates outward &mdash; each at a different probability.</p>
+           <p><strong>"is"</strong> is selected, glowing brightest among the candidates. The model has made its choice.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'The cycle continues',
+    body: `<p>And then it <span class="highlight hl-cycle">repeats</span>. Each new token is fed back through the entire model. Token by token, the response emerges.</p>
+           <p>Not from "understanding" in the human sense, but from navigating an astronomically complex space of learned patterns.</p>
+           <p>Watch the path grow through embedding space as each predicted word feeds back in, passes through layers, and produces the next.</p>`,
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.008);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 2, 20);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 5;
+controls.maxDistance = 50;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight1 = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight1.position.set(-5, 5, 5);
+scene.add(pointLight1);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(30, 30, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   UTILITY: Canvas text sprite
+   =================================================================== */
+
+function makeTextSprite(text, color, fontSize = 32, bgOpacity = 0.75) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 64;
+
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 28;
+  const ph = 44;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = `rgba(10,10,15,${bgOpacity})`;
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(4, 0.5, 1);
+  return sprite;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/* ===================================================================
+   SCENE OBJECTS - Shared across stages
+   =================================================================== */
+
+// Master group that holds everything stage-specific
+const stageGroup = new THREE.Group();
+scene.add(stageGroup);
+
+// ---- Token data ----
+const TOKEN_COLORS = {
+  'The':     0xffb74d,
+  'chicken': 0xef5350,
+  'is':      0x66bb6a,
+  'tasty':   0x42a5f5,
+  'and':     0xab47bc,
+};
+
+// ---- Stage 1: Prompt text + token cubes ----
+const s1Group = new THREE.Group();
+stageGroup.add(s1Group);
+
+// The prompt text as a sprite
+const promptSprite = makeTextSprite('"The chicken"', 0xcccccc, 36, 0.6);
+promptSprite.scale.set(6, 0.75, 1);
+promptSprite.position.set(0, 3, 0);
+s1Group.add(promptSprite);
+
+// Token cubes
+const tokenCubes = [];
+const tokenLabels = [];
+const tokenNames = ['The', 'chicken'];
+const tokenPositions = [
+  new THREE.Vector3(-2.5, 0, 0),
+  new THREE.Vector3(2.5, 0, 0),
+];
+
+tokenNames.forEach((name, i) => {
+  const geo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
+  const mat = new THREE.MeshStandardMaterial({
+    color: TOKEN_COLORS[name],
+    emissive: TOKEN_COLORS[name],
+    emissiveIntensity: 0.3,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(tokenPositions[i]);
+  mesh.position.y = 0;
+
+  // Glow
+  const glowGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: TOKEN_COLORS[name],
+    transparent: true,
+    opacity: 0.1,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+
+  s1Group.add(mesh);
+  tokenCubes.push(mesh);
+
+  // Label
+  const label = makeTextSprite(`"${name}"`, TOKEN_COLORS[name], 28);
+  label.position.set(tokenPositions[i].x, -1.3, 0);
+  s1Group.add(label);
+  tokenLabels.push(label);
+});
+
+// Arrow between prompt and tokens
+const arrowPoints = [new THREE.Vector3(0, 2, 0), new THREE.Vector3(0, 1.2, 0)];
+const arrowGeo = new THREE.BufferGeometry().setFromPoints(arrowPoints);
+const arrowMat = new THREE.LineBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.6 });
+const arrowLine = new THREE.Line(arrowGeo, arrowMat);
+s1Group.add(arrowLine);
+
+// Small arrowhead
+const arrowHead = new THREE.Mesh(
+  new THREE.ConeGeometry(0.15, 0.4, 8),
+  new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.6 })
+);
+arrowHead.position.set(0, 1.0, 0);
+arrowHead.rotation.x = Math.PI;
+s1Group.add(arrowHead);
+
+
+// ---- Stage 2: Embedding spheres ----
+const s2Group = new THREE.Group();
+stageGroup.add(s2Group);
+
+const embeddingSpheres = [];
+const embeddingLabels = [];
+const embeddingPositions = [
+  new THREE.Vector3(-3, 2.5, -1),
+  new THREE.Vector3(3, -1, 2),
+];
+
+tokenNames.forEach((name, i) => {
+  const geo = new THREE.SphereGeometry(0.5, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: TOKEN_COLORS[name],
+    emissive: TOKEN_COLORS[name],
+    emissiveIntensity: 0.4,
+    roughness: 0.25,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(embeddingPositions[i]);
+
+  // Glow
+  const glowGeo = new THREE.SphereGeometry(0.8, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: TOKEN_COLORS[name],
+    transparent: true,
+    opacity: 0.12,
+  });
+  mesh.add(new THREE.Mesh(glowGeo, glowMat));
+  s2Group.add(mesh);
+  embeddingSpheres.push(mesh);
+
+  const label = makeTextSprite(`"${name}"`, TOKEN_COLORS[name], 28);
+  label.position.set(embeddingPositions[i].x, embeddingPositions[i].y + 1.2, embeddingPositions[i].z);
+  s2Group.add(label);
+  embeddingLabels.push(label);
+});
+
+// Sequence connection line
+const seqLineGeo = new THREE.BufferGeometry().setFromPoints([
+  embeddingPositions[0], embeddingPositions[1]
+]);
+const seqLineMat = new THREE.LineDashedMaterial({
+  color: 0x888888,
+  transparent: true,
+  opacity: 0.5,
+  dashSize: 0.3,
+  gapSize: 0.2,
+});
+const seqLine = new THREE.Line(seqLineGeo, seqLineMat);
+seqLine.computeLineDistances();
+s2Group.add(seqLine);
+
+// Axis hints for embedding space
+const axisColors = [0x42a5f5, 0x66bb6a, 0xab47bc];
+const axisLabelsText = ['dim 1', 'dim 2', 'dim 3'];
+const axisDirs = [
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0, 0, 1),
+];
+
+const s2Axes = [];
+axisDirs.forEach((dir, i) => {
+  const pts = [dir.clone().multiplyScalar(-5), dir.clone().multiplyScalar(5)];
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({ color: axisColors[i], transparent: true, opacity: 0.2 });
+  const line = new THREE.Line(geo, mat);
+  s2Group.add(line);
+  s2Axes.push(line);
+
+  const lbl = makeTextSprite(axisLabelsText[i], axisColors[i], 20, 0.5);
+  lbl.position.copy(dir.clone().multiplyScalar(5.8));
+  lbl.scale.set(2.5, 0.35, 1);
+  s2Group.add(lbl);
+});
+
+
+// ---- Stage 3: Transformer layers ----
+const s3Group = new THREE.Group();
+stageGroup.add(s3Group);
+
+const NUM_LAYERS = 6;
+const LAYER_SPACING = 2.2;
+const LAYER_START_Y = -5;
+
+// Token spheres that pass through layers
+const s3Spheres = [];
+const s3SphereLabels = [];
+
+tokenNames.forEach((name, i) => {
+  const geo = new THREE.SphereGeometry(0.4, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: TOKEN_COLORS[name],
+    emissive: TOKEN_COLORS[name],
+    emissiveIntensity: 0.4,
+    roughness: 0.25,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+
+  const glowGeo = new THREE.SphereGeometry(0.65, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: TOKEN_COLORS[name],
+    transparent: true,
+    opacity: 0.12,
+  });
+  mesh.add(new THREE.Mesh(glowGeo, glowMat));
+  s3Group.add(mesh);
+  s3Spheres.push(mesh);
+
+  const label = makeTextSprite(`"${name}"`, TOKEN_COLORS[name], 24);
+  label.scale.set(3, 0.4, 1);
+  s3Group.add(label);
+  s3SphereLabels.push(label);
+});
+
+// Translucent layer planes
+const layerPlanes = [];
+for (let i = 0; i < NUM_LAYERS; i++) {
+  const geo = new THREE.PlaneGeometry(8, 0.15);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x6644aa,
+    transparent: true,
+    opacity: 0.15,
+    side: THREE.DoubleSide,
+  });
+  const plane = new THREE.Mesh(geo, mat);
+  plane.position.y = LAYER_START_Y + i * LAYER_SPACING;
+  plane.rotation.x = Math.PI / 2;
+  s3Group.add(plane);
+  layerPlanes.push(plane);
+
+  // Layer label
+  if (i === 0 || i === NUM_LAYERS - 1) {
+    const txt = i === 0 ? 'Layer 1' : `Layer ${NUM_LAYERS}`;
+    const lbl = makeTextSprite(txt, 0x9966dd, 20, 0.5);
+    lbl.scale.set(2.5, 0.35, 1);
+    lbl.position.set(5.5, plane.position.y, 0);
+    s3Group.add(lbl);
+  }
+}
+
+// Attention lines (will animate)
+const attentionLines = [];
+for (let layer = 0; layer < NUM_LAYERS; layer++) {
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-2, 0, 0),
+    new THREE.Vector3(2, 0, 0),
+  ]);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xff6644,
+    transparent: true,
+    opacity: 0,
+  });
+  const line = new THREE.Line(geo, mat);
+  line.position.y = LAYER_START_Y + layer * LAYER_SPACING;
+  s3Group.add(line);
+  attentionLines.push(line);
+}
+
+
+// ---- Stage 4: Prediction ----
+const s4Group = new THREE.Group();
+stageGroup.add(s4Group);
+
+// Final token beacon
+const beaconGeo = new THREE.SphereGeometry(0.6, 32, 32);
+const beaconMat = new THREE.MeshStandardMaterial({
+  color: 0xef5350,
+  emissive: 0xef5350,
+  emissiveIntensity: 0.6,
+  roughness: 0.2,
+  metalness: 0.1,
+});
+const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+beacon.position.set(0, 2, 0);
+s4Group.add(beacon);
+
+// Large glow around beacon
+const beaconGlowGeo = new THREE.SphereGeometry(1.2, 32, 32);
+const beaconGlowMat = new THREE.MeshBasicMaterial({
+  color: 0xef5350,
+  transparent: true,
+  opacity: 0.08,
+});
+const beaconGlow = new THREE.Mesh(beaconGlowGeo, beaconGlowMat);
+beacon.add(beaconGlow);
+
+const beaconLabel = makeTextSprite('"chicken"', 0xef5350, 24);
+beaconLabel.scale.set(3, 0.4, 1);
+beaconLabel.position.set(0, 3.5, 0);
+s4Group.add(beaconLabel);
+
+// Candidate words as smaller spheres in a cloud
+const candidates = [
+  { word: 'is',     prob: 0.42, pos: new THREE.Vector3(0, 5.5, 0),   color: 0x66bb6a },
+  { word: 'was',    prob: 0.15, pos: new THREE.Vector3(2.5, 4.5, 1),  color: 0x78909c },
+  { word: 'can',    prob: 0.08, pos: new THREE.Vector3(-2.8, 4.8, -0.5), color: 0x78909c },
+  { word: 'tastes', prob: 0.06, pos: new THREE.Vector3(1.5, 5.8, -1.5), color: 0x78909c },
+  { word: 'crossed',prob: 0.04, pos: new THREE.Vector3(-1.8, 6.2, 1.2), color: 0x78909c },
+  { word: 'soup',   prob: 0.03, pos: new THREE.Vector3(3.2, 5.2, 0.8), color: 0x78909c },
+];
+
+const candidateMeshes = [];
+const candidateLabels = [];
+
+candidates.forEach((c, i) => {
+  const size = 0.15 + c.prob * 0.8;
+  const geo = new THREE.SphereGeometry(size, 24, 24);
+  const isSelected = c.word === 'is';
+  const mat = new THREE.MeshStandardMaterial({
+    color: c.color,
+    emissive: c.color,
+    emissiveIntensity: isSelected ? 0.7 : 0.2,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(c.pos);
+
+  if (isSelected) {
+    const glowGeo = new THREE.SphereGeometry(size * 1.8, 24, 24);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: c.color,
+      transparent: true,
+      opacity: 0.15,
+    });
+    mesh.add(new THREE.Mesh(glowGeo, glowMat));
+  }
+
+  s4Group.add(mesh);
+  candidateMeshes.push(mesh);
+
+  // Line from beacon to candidate
+  const lineGeo = new THREE.BufferGeometry().setFromPoints([
+    beacon.position.clone(),
+    c.pos.clone(),
+  ]);
+  const lineMat = new THREE.LineBasicMaterial({
+    color: c.color,
+    transparent: true,
+    opacity: isSelected ? 0.4 : 0.12,
+  });
+  s4Group.add(new THREE.Line(lineGeo, lineMat));
+
+  // Label
+  const probStr = `"${c.word}" ${Math.round(c.prob * 100)}%`;
+  const lbl = makeTextSprite(probStr, isSelected ? 0x66bb6a : 0x999999, isSelected ? 26 : 20, 0.6);
+  lbl.scale.set(isSelected ? 3.5 : 2.8, isSelected ? 0.45 : 0.35, 1);
+  lbl.position.set(c.pos.x, c.pos.y + size + 0.6, c.pos.z);
+  s4Group.add(lbl);
+  candidateLabels.push(lbl);
+});
+
+
+// ---- Stage 5: The cycle ----
+const s5Group = new THREE.Group();
+stageGroup.add(s5Group);
+
+// Build a growing sequence of tokens
+const cycleTokens = ['The', 'chicken', 'is', 'tasty', 'and'];
+const cycleColors = cycleTokens.map(t => TOKEN_COLORS[t]);
+
+// Path through "embedding space"
+const cyclePath = [
+  new THREE.Vector3(-6, 0, 0),
+  new THREE.Vector3(-3, 2, 1),
+  new THREE.Vector3(0, 1, -1),
+  new THREE.Vector3(3, 3, 0.5),
+  new THREE.Vector3(5.5, 1.5, -0.5),
+];
+
+const cycleSpheres = [];
+const cycleLabels = [];
+
+cycleTokens.forEach((name, i) => {
+  const geo = new THREE.SphereGeometry(0.4, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: cycleColors[i],
+    emissive: cycleColors[i],
+    emissiveIntensity: 0.4,
+    roughness: 0.25,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(cyclePath[i]);
+
+  const glowGeo = new THREE.SphereGeometry(0.65, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: cycleColors[i],
+    transparent: true,
+    opacity: 0.12,
+  });
+  mesh.add(new THREE.Mesh(glowGeo, glowMat));
+  s5Group.add(mesh);
+  cycleSpheres.push(mesh);
+
+  const label = makeTextSprite(`"${name}"`, cycleColors[i], 24);
+  label.scale.set(3, 0.4, 1);
+  label.position.set(cyclePath[i].x, cyclePath[i].y + 1.0, cyclePath[i].z);
+  s5Group.add(label);
+  cycleLabels.push(label);
+});
+
+// Path lines connecting the tokens
+const cycleLineGroup = new THREE.Group();
+s5Group.add(cycleLineGroup);
+
+for (let i = 0; i < cyclePath.length - 1; i++) {
+  // Curved path using intermediate points
+  const start = cyclePath[i];
+  const end = cyclePath[i + 1];
+  const mid = new THREE.Vector3().lerpVectors(start, end, 0.5);
+  mid.y += 0.5;
+
+  const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+  const pts = curve.getPoints(20);
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const c1 = new THREE.Color(cycleColors[i]);
+  const c2 = new THREE.Color(cycleColors[i + 1]);
+  const midColor = c1.clone().lerp(c2, 0.5);
+  const mat = new THREE.LineBasicMaterial({
+    color: midColor,
+    transparent: true,
+    opacity: 0.5,
+  });
+  const line = new THREE.Line(geo, mat);
+  cycleLineGroup.add(line);
+}
+
+// Small "layer block" icons along the path to show processing
+const miniLayerGroup = new THREE.Group();
+s5Group.add(miniLayerGroup);
+
+for (let i = 0; i < cyclePath.length - 1; i++) {
+  const mid = new THREE.Vector3().lerpVectors(cyclePath[i], cyclePath[i + 1], 0.5);
+  mid.y += 0.5;
+  const geo = new THREE.BoxGeometry(0.4, 0.8, 0.4);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x6644aa,
+    emissive: 0x6644aa,
+    emissiveIntensity: 0.2,
+    transparent: true,
+    opacity: 0.5,
+    roughness: 0.5,
+  });
+  const box = new THREE.Mesh(geo, mat);
+  box.position.copy(mid);
+  miniLayerGroup.add(box);
+}
+
+// Feedback arrow (looping arrow hint)
+const feedbackLabel = makeTextSprite('feed back in...', 0x999999, 20, 0.5);
+feedbackLabel.scale.set(3.5, 0.4, 1);
+feedbackLabel.position.set(5.5, -0.5, 0);
+s5Group.add(feedbackLabel);
+
+// "..." continuing indicator
+const dotsLabel = makeTextSprite('...', 0x666666, 28, 0.4);
+dotsLabel.scale.set(2, 0.4, 1);
+dotsLabel.position.set(8, 1.5, -0.5);
+s5Group.add(dotsLabel);
+
+
+/* ===================================================================
+   STAGE VISIBILITY AND CAMERA
+   =================================================================== */
+
+const stageConfigs = [
+  { // Stage 1: Tokenization
+    camera: { x: 0, y: 1, z: 12 },
+    target: { x: 0, y: 0.5, z: 0 },
+    autoRotate: false,
+  },
+  { // Stage 2: Embeddings
+    camera: { x: 8, y: 5, z: 10 },
+    target: { x: 0, y: 1, z: 0 },
+    autoRotate: true,
+  },
+  { // Stage 3: Transformer layers
+    camera: { x: 6, y: 4, z: 12 },
+    target: { x: 0, y: 2, z: 0 },
+    autoRotate: false,
+  },
+  { // Stage 4: Prediction
+    camera: { x: 5, y: 4, z: 10 },
+    target: { x: 0, y: 3.5, z: 0 },
+    autoRotate: true,
+  },
+  { // Stage 5: Cycle
+    camera: { x: 2, y: 5, z: 14 },
+    target: { x: 0, y: 1.5, z: 0 },
+    autoRotate: true,
+  },
+];
+
+const stageGroups = [s1Group, s2Group, s3Group, s4Group, s5Group];
+
+function setStageVisibility(idx) {
+  stageGroups.forEach((g, i) => {
+    g.visible = i === idx;
+  });
+}
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+const cameraTarget = new THREE.Vector3(0, 1, 12);
+const controlsTarget = new THREE.Vector3(0, 0.5, 0);
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+// Build progress dots
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+
+  const cfg = stageConfigs[idx];
+  cameraTarget.set(cfg.camera.x, cfg.camera.y, cfg.camera.z);
+  controlsTarget.set(cfg.target.x, cfg.target.y, cfg.target.z);
+
+  setStageVisibility(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+
+  // Reset stage-specific animation timers
+  stageStartTime = clock.getElapsedTime();
+}
+
+// Initialize
+let stageStartTime = 0;
+setStageVisibility(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera3D.aspect = w / h;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const stageT = t - stageStartTime;
+  const lerpSpeed = 2.5 * dt;
+
+  // Lerp camera
+  camera3D.position.lerp(cameraTarget, lerpSpeed * 0.7);
+  controls.target.lerp(controlsTarget, lerpSpeed * 0.7);
+
+  // Auto-rotate
+  controls.autoRotate = stageConfigs[currentStage].autoRotate;
+
+  // Grid subtle rotation
+  gridHelper.rotation.y = t * 0.02;
+
+  // ---- Stage-specific animations ----
+
+  if (currentStage === 0) {
+    // Stage 1: Prompt text fades, cubes appear and gently rotate
+    const fadeIn = Math.min(stageT / 1.5, 1);
+    promptSprite.material.opacity = fadeIn;
+
+    tokenCubes.forEach((cube, i) => {
+      const delay = 1.0 + i * 0.5;
+      const cubeT = Math.max(0, stageT - delay);
+      const scale = Math.min(cubeT / 0.6, 1);
+      cube.scale.setScalar(scale);
+      cube.rotation.x = t * 0.4 + i * 1.5;
+      cube.rotation.y = t * 0.6 + i * 0.8;
+
+      // Gentle float
+      cube.position.y = tokenPositions[i].y + Math.sin(t * 1.2 + i * 2) * 0.15;
+
+      // Pulse glow
+      const glow = cube.children[0];
+      if (glow) glow.material.opacity = 0.06 + Math.sin(t * 2 + i) * 0.04;
+    });
+
+    tokenLabels.forEach((lbl, i) => {
+      const delay = 1.0 + i * 0.5;
+      const lblT = Math.max(0, stageT - delay);
+      lbl.material.opacity = Math.min(lblT / 0.6, 1);
+    });
+
+    // Arrow appears
+    const arrowFade = Math.min(Math.max(stageT - 0.5, 0) / 0.5, 1);
+    arrowMat.opacity = arrowFade * 0.6;
+    arrowHead.material.opacity = arrowFade * 0.6;
+  }
+
+  if (currentStage === 1) {
+    // Stage 2: Spheres in embedding space, gentle float
+    embeddingSpheres.forEach((sphere, i) => {
+      sphere.position.x = embeddingPositions[i].x + Math.sin(t * 0.8 + i * 3) * 0.15;
+      sphere.position.y = embeddingPositions[i].y + Math.sin(t * 1.0 + i * 2) * 0.2;
+      sphere.position.z = embeddingPositions[i].z + Math.cos(t * 0.7 + i) * 0.15;
+
+      embeddingLabels[i].position.set(
+        sphere.position.x,
+        sphere.position.y + 1.2,
+        sphere.position.z
+      );
+
+      // Pulse glow
+      const glow = sphere.children[0];
+      if (glow) glow.material.opacity = 0.08 + Math.sin(t * 2 + i * 1.5) * 0.06;
+    });
+
+    // Update sequence line dynamically
+    const positions = seqLine.geometry.attributes.position;
+    positions.setXYZ(0, embeddingSpheres[0].position.x, embeddingSpheres[0].position.y, embeddingSpheres[0].position.z);
+    positions.setXYZ(1, embeddingSpheres[1].position.x, embeddingSpheres[1].position.y, embeddingSpheres[1].position.z);
+    positions.needsUpdate = true;
+    seqLine.computeLineDistances();
+  }
+
+  if (currentStage === 2) {
+    // Stage 3: Spheres moving through layers
+    const cycleLen = 6.0;
+    const progress = (stageT % cycleLen) / cycleLen;
+
+    const totalHeight = (NUM_LAYERS - 1) * LAYER_SPACING;
+    const yBase = LAYER_START_Y;
+
+    s3Spheres.forEach((sphere, i) => {
+      const xOff = (i === 0 ? -2 : 2);
+      const yPos = yBase + progress * totalHeight;
+
+      // Slight horizontal wobble as they pass through layers
+      const wobble = Math.sin(progress * Math.PI * NUM_LAYERS + i * Math.PI) * 0.3;
+      sphere.position.set(xOff + wobble, yPos, 0);
+
+      s3SphereLabels[i].position.set(sphere.position.x, sphere.position.y + 0.8, 0);
+
+      // Pulse glow
+      const glow = sphere.children[0];
+      if (glow) glow.material.opacity = 0.08 + Math.sin(t * 3 + i) * 0.06;
+    });
+
+    // Flash attention lines as spheres pass through each layer
+    attentionLines.forEach((line, layer) => {
+      const layerY = LAYER_START_Y + layer * LAYER_SPACING;
+      const sphereY = yBase + progress * totalHeight;
+      const dist = Math.abs(sphereY - layerY);
+
+      // Update line endpoints to connect the two spheres at this layer
+      const pos = line.geometry.attributes.position;
+      pos.setXYZ(0, s3Spheres[0].position.x, layerY, 0);
+      pos.setXYZ(1, s3Spheres[1].position.x, layerY, 0);
+      pos.needsUpdate = true;
+
+      // Bright when sphere is near this layer
+      const intensity = Math.max(0, 1 - dist / 1.5);
+      line.material.opacity = intensity * 0.7;
+      line.material.color.setHex(intensity > 0.3 ? 0xff6644 : 0x664422);
+    });
+
+    // Pulse layer planes when spheres pass through
+    layerPlanes.forEach((plane, layer) => {
+      const layerY = LAYER_START_Y + layer * LAYER_SPACING;
+      const sphereY = yBase + progress * totalHeight;
+      const dist = Math.abs(sphereY - layerY);
+      const intensity = Math.max(0, 1 - dist / 1.5);
+      plane.material.opacity = 0.1 + intensity * 0.2;
+      plane.material.color.setHex(intensity > 0.3 ? 0x8866cc : 0x6644aa);
+    });
+  }
+
+  if (currentStage === 3) {
+    // Stage 4: Beacon pulses, candidates float
+    const pulse = 0.9 + Math.sin(t * 3) * 0.15;
+    beacon.scale.setScalar(pulse);
+    beaconGlowMat.opacity = 0.06 + Math.sin(t * 2) * 0.04;
+    beaconMat.emissiveIntensity = 0.4 + Math.sin(t * 3) * 0.2;
+
+    candidateMeshes.forEach((mesh, i) => {
+      const c = candidates[i];
+      mesh.position.x = c.pos.x + Math.sin(t * 0.7 + i * 2) * 0.2;
+      mesh.position.y = c.pos.y + Math.sin(t * 0.9 + i * 1.5) * 0.15;
+      mesh.position.z = c.pos.z + Math.cos(t * 0.6 + i * 1.2) * 0.15;
+
+      candidateLabels[i].position.set(
+        mesh.position.x,
+        mesh.position.y + (0.15 + c.prob * 0.8) + 0.6,
+        mesh.position.z
+      );
+
+      // Selected word ("is") pulses
+      if (c.word === 'is') {
+        const selPulse = 1.0 + Math.sin(t * 4) * 0.15;
+        mesh.scale.setScalar(selPulse);
+        mesh.material.emissiveIntensity = 0.5 + Math.sin(t * 4) * 0.3;
+      }
+    });
+  }
+
+  if (currentStage === 4) {
+    // Stage 5: Tokens appear one by one and path grows
+    const tokenInterval = 1.2;
+
+    cycleSpheres.forEach((sphere, i) => {
+      const delay = i * tokenInterval;
+      const tokenT = Math.max(0, stageT - delay);
+      const fadeIn = Math.min(tokenT / 0.5, 1);
+
+      sphere.scale.setScalar(fadeIn);
+      sphere.material.opacity = fadeIn;
+
+      // Float
+      sphere.position.x = cyclePath[i].x + Math.sin(t * 0.8 + i * 1.5) * 0.1;
+      sphere.position.y = cyclePath[i].y + Math.sin(t * 1.0 + i * 2.0) * 0.15;
+      sphere.position.z = cyclePath[i].z + Math.cos(t * 0.7 + i * 1.3) * 0.1;
+
+      cycleLabels[i].position.set(sphere.position.x, sphere.position.y + 1.0, sphere.position.z);
+      cycleLabels[i].material.opacity = fadeIn;
+
+      // Pulse glow
+      const glow = sphere.children[0];
+      if (glow) glow.material.opacity = (0.08 + Math.sin(t * 2.5 + i) * 0.05) * fadeIn;
+    });
+
+    // Path lines fade in with tokens
+    cycleLineGroup.children.forEach((line, i) => {
+      const delay = (i + 1) * tokenInterval;
+      const lineT = Math.max(0, stageT - delay);
+      line.material.opacity = Math.min(lineT / 0.5, 1) * 0.5;
+    });
+
+    // Mini layer blocks pulse
+    miniLayerGroup.children.forEach((box, i) => {
+      const delay = (i + 0.5) * tokenInterval;
+      const boxT = Math.max(0, stageT - delay);
+      const fadeIn = Math.min(boxT / 0.5, 1);
+      box.scale.setScalar(fadeIn);
+      box.material.opacity = fadeIn * 0.5;
+      box.rotation.y = t * 1.5 + i;
+    });
+
+    // Feedback label
+    const fbDelay = cycleTokens.length * tokenInterval;
+    const fbT = Math.max(0, stageT - fbDelay);
+    feedbackLabel.material.opacity = Math.min(fbT / 1.0, 1) * 0.7;
+    dotsLabel.material.opacity = Math.min(fbT / 1.0, 1) * (0.4 + Math.sin(t * 2) * 0.2);
+  }
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>From Numbers to Words: The Softmax Step</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .stage-body code {
+    background: rgba(0,0,0,0.06);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.92em;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-oven     { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .word-kitchen  { background: rgba(66,165,245,0.2);   color: #1565c0; }
+  .word-fridge   { background: rgba(102,187,106,0.2);  color: #2e7d32; }
+  .word-car      { background: rgba(239,83,80,0.2);    color: #c62828; }
+  .word-memory   { background: rgba(171,71,188,0.2);   color: #7b1fa2; }
+  .word-blue     { background: rgba(38,166,154,0.2);   color: #00796b; }
+  .word-quantum  { background: rgba(255,112,67,0.2);   color: #d84315; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   DATA
+   =================================================================== */
+
+const WORDS = [
+  { name: 'oven',    logit: 4.2,  color: 0xffb74d, cssClass: 'word-oven' },
+  { name: 'kitchen', logit: 3.1,  color: 0x42a5f5, cssClass: 'word-kitchen' },
+  { name: 'fridge',  logit: 2.8,  color: 0x66bb6a, cssClass: 'word-fridge' },
+  { name: 'car',     logit: -1.5, color: 0xef5350, cssClass: 'word-car' },
+  { name: 'memory',  logit: -3.2, color: 0xab47bc, cssClass: 'word-memory' },
+  { name: 'blue',    logit: -2.1, color: 0x26a69a, cssClass: 'word-blue' },
+  { name: 'quantum', logit: -4.0, color: 0xff7043, cssClass: 'word-quantum' },
+];
+
+// Compute softmax probabilities
+const maxLogit = Math.max(...WORDS.map(w => w.logit));
+const exps = WORDS.map(w => Math.exp(w.logit - maxLogit));
+const sumExp = exps.reduce((a, b) => a + b, 0);
+const probs = exps.map(e => e / sumExp);
+WORDS.forEach((w, i) => { w.prob = probs[i]; });
+
+// Spacing on x-axis
+const SPREAD = 2.2;
+function xForIndex(i) { return (i - (WORDS.length - 1) / 2) * SPREAD; }
+
+// Scale heights
+const LOGIT_SCALE = 0.9;
+const PROB_SCALE = 12;
+
+function tag(w) {
+  return `<span class="word-tag ${w.cssClass}">${w.name}</span>`;
+}
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'The model outputs raw scores',
+    body: `<p>The model doesn't directly output probabilities. It outputs raw scores called <strong>logits</strong> &mdash; just numbers.</p>
+           <p>Each candidate next-word gets a score: ${tag(WORDS[0])} gets 4.2, ${tag(WORDS[1])} gets 3.1, ${tag(WORDS[2])} gets 2.8, while ${tag(WORDS[3])} gets &minus;1.5, ${tag(WORDS[5])} gets &minus;2.1, and ${tag(WORDS[4])} gets &minus;3.2.</p>
+           <p>Higher bars mean the model thinks that word is more likely &mdash; but these numbers aren't probabilities yet.</p>`,
+    mode: 'logits',
+    showZeroLine: false,
+    showNumbers: false,
+    showSumLine: false,
+    showFormula: false,
+    showBarChart: false,
+    showWheel: false,
+    camera: { x: 0, y: 3, z: 20 },
+    target: { x: 0, y: 1, z: 0 },
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: "Raw scores aren't probabilities",
+    body: `<p>Look at the problem: some scores are <strong>negative</strong> (below the zero line), they don't sum to 1, and the numbers are hard to interpret.</p>
+           <p>What does a logit of 4.2 actually <em>mean</em>? Is ${tag(WORDS[0])} twice as likely as ${tag(WORDS[2])}? Ten times? We can't tell from raw scores alone.</p>
+           <p>We need a way to transform these arbitrary numbers into something meaningful &mdash; a proper probability distribution.</p>`,
+    mode: 'logits',
+    showZeroLine: true,
+    showNumbers: true,
+    showSumLine: false,
+    showFormula: false,
+    showBarChart: false,
+    showWheel: false,
+    camera: { x: 2, y: 4, z: 19 },
+    target: { x: 0, y: 1, z: 0 },
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Softmax transforms everything',
+    body: `<p>The <strong>softmax</strong> function converts logits into probabilities using: <code>e^x / &Sigma;e^x</code></p>
+           <p>Exponentiation does two things: it makes all values positive, and it amplifies differences. High scores get pushed much higher; low scores collapse toward zero.</p>
+           <p>After softmax, every value sits between 0 and 1, and they all sum to exactly 1.0. The y-axis now shows probability instead of raw score.</p>`,
+    mode: 'probs',
+    showZeroLine: false,
+    showNumbers: true,
+    showSumLine: true,
+    showFormula: true,
+    showBarChart: false,
+    showWheel: false,
+    camera: { x: 0, y: 3, z: 20 },
+    target: { x: 0, y: 1, z: 0 },
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'The winner takes most',
+    body: `<p>After softmax, ${tag(WORDS[0])} dominates at ~63%, ${tag(WORDS[1])} gets ~21%, and ${tag(WORDS[2])} gets ~16%. The rest share less than 1% combined.</p>
+           <p>Softmax <strong>amplifies differences</strong>. The highest-scoring word gets a disproportionate share of the probability mass. A gap of just 1.1 points in logits (4.2 vs 3.1) becomes a 3x difference in probability.</p>
+           <p>The floating bar chart makes it clear: most of the probability is concentrated in just a few words.</p>`,
+    mode: 'probs',
+    showZeroLine: false,
+    showNumbers: true,
+    showSumLine: true,
+    showFormula: false,
+    showBarChart: true,
+    showWheel: false,
+    camera: { x: 3, y: 5, z: 19 },
+    target: { x: 1, y: 2, z: 0 },
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Then we sample',
+    body: `<p>Finally, the model <strong>samples</strong> from this distribution. It spins the wheel and picks a word.</p>
+           <p>${tag(WORDS[0])} wins most often &mdash; but it's not guaranteed. There's always a chance the model picks ${tag(WORDS[1])} or even ${tag(WORDS[3])}.</p>
+           <p>This is what makes language models feel creative rather than deterministic. The same prompt can produce different outputs, because sampling introduces randomness.</p>`,
+    mode: 'probs',
+    showZeroLine: false,
+    showNumbers: false,
+    showSumLine: false,
+    showFormula: false,
+    showBarChart: false,
+    showWheel: true,
+    camera: { x: -1, y: 4, z: 20 },
+    target: { x: 0, y: 2, z: 0 },
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.008);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(0, 3, 20);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 8;
+controls.maxDistance = 40;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight.position.set(-5, 8, 5);
+scene.add(pointLight);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(30, 30, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   UTILITY: Canvas text sprites
+   =================================================================== */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color, fontSize = 32) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 24;
+  const ph = 40;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(3, 0.75, 1);
+  return sprite;
+}
+
+function makeNumberSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 192;
+  canvas.height = 48;
+
+  ctx.font = 'bold 26px SF Mono, Fira Code, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},0.9)`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(2.2, 0.55, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   WORD SPHERES, LABELS, NUMBER LABELS
+   =================================================================== */
+
+const wordObjects = WORDS.map((w, i) => {
+  // Sphere
+  const geo = new THREE.SphereGeometry(0.4, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.color,
+    emissive: w.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+
+  // Glow
+  const glowGeo = new THREE.SphereGeometry(0.6, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: w.color,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+
+  scene.add(mesh);
+
+  // Name label
+  const label = makeTextSprite(w.name, w.color);
+  scene.add(label);
+
+  // Number labels (logit and probability)
+  const logitLabel = makeNumberSprite(w.logit.toFixed(1), w.color);
+  logitLabel.material.opacity = 0;
+  scene.add(logitLabel);
+
+  const probLabel = makeNumberSprite((w.prob * 100).toFixed(1) + '%', w.color);
+  probLabel.material.opacity = 0;
+  scene.add(probLabel);
+
+  return {
+    mesh, label, glow, logitLabel, probLabel,
+    targetPos: new THREE.Vector3(xForIndex(i), 0, 0),
+    targetScale: 1,
+  };
+});
+
+/* ===================================================================
+   ZERO LINE
+   =================================================================== */
+
+const zeroLineGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-10, 0, 0),
+  new THREE.Vector3(10, 0, 0),
+]);
+const zeroLineMat = new THREE.LineBasicMaterial({
+  color: 0x666688,
+  transparent: true,
+  opacity: 0,
+});
+const zeroLine = new THREE.Line(zeroLineGeo, zeroLineMat);
+scene.add(zeroLine);
+
+// Zero label
+const zeroLabel = makeNumberSprite('0', 0x666688);
+zeroLabel.position.set(-9, 0.5, 0);
+zeroLabel.material.opacity = 0;
+scene.add(zeroLabel);
+
+/* ===================================================================
+   SUM = 1.0 LINE
+   =================================================================== */
+
+const sumLineGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-10, PROB_SCALE * 1.0, 0),
+  new THREE.Vector3(10, PROB_SCALE * 1.0, 0),
+]);
+const sumLineMat = new THREE.LineDashedMaterial({
+  color: 0x88ff88,
+  transparent: true,
+  opacity: 0,
+  dashSize: 0.3,
+  gapSize: 0.2,
+});
+const sumLine = new THREE.Line(sumLineGeo, sumLineMat);
+sumLine.computeLineDistances();
+scene.add(sumLine);
+
+const sumLabel = makeNumberSprite('sum = 1.0', 0x88ff88);
+sumLabel.position.set(-8.5, PROB_SCALE * 1.0 + 0.6, 0);
+sumLabel.material.opacity = 0;
+scene.add(sumLabel);
+
+/* ===================================================================
+   FORMULA SPRITE
+   =================================================================== */
+
+function makeFormulaSprite() {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 96;
+
+  ctx.fillStyle = 'rgba(10,10,15,0.8)';
+  roundRect(ctx, 10, 10, 492, 76, 12);
+  ctx.fill();
+
+  ctx.font = 'bold 36px SF Mono, Fira Code, monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(200,220,255,0.9)';
+  ctx.fillText('softmax(x) = e^x / \u03A3e^x', canvas.width / 2, canvas.height / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(8, 1.5, 1);
+  sprite.position.set(0, PROB_SCALE * 1.0 + 2.5, 0);
+  return sprite;
+}
+
+const formulaSprite = makeFormulaSprite();
+formulaSprite.material.opacity = 0;
+scene.add(formulaSprite);
+
+/* ===================================================================
+   Y-AXIS LABELS
+   =================================================================== */
+
+function makeAxisLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 48;
+
+  ctx.font = 'bold 22px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},0.85)`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(3.5, 0.65, 1);
+  return sprite;
+}
+
+// Y-axis line
+const yAxisGeo = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-9, -4, 0),
+  new THREE.Vector3(-9, 13, 0),
+]);
+const yAxisMat = new THREE.LineBasicMaterial({
+  color: 0x555577,
+  transparent: true,
+  opacity: 0.4,
+});
+const yAxisLine = new THREE.Line(yAxisGeo, yAxisMat);
+scene.add(yAxisLine);
+
+const logitAxisLabel = makeAxisLabel('Raw Score (Logit)', 0x8888bb);
+logitAxisLabel.position.set(-9, 13.5, 0);
+scene.add(logitAxisLabel);
+
+const probAxisLabel = makeAxisLabel('Probability', 0x88bb88);
+probAxisLabel.position.set(-9, 13.5, 0);
+probAxisLabel.material.opacity = 0;
+scene.add(probAxisLabel);
+
+/* ===================================================================
+   BAR CHART (floating, stage 4)
+   =================================================================== */
+
+const barChartGroup = new THREE.Group();
+barChartGroup.position.set(8, 6, -3);
+scene.add(barChartGroup);
+
+const BAR_WIDTH = 0.5;
+const BAR_GAP = 0.15;
+const BAR_MAX_H = 5;
+
+const sortedByProb = WORDS.map((w, i) => ({ ...w, idx: i }))
+  .sort((a, b) => b.prob - a.prob);
+
+const barObjects = sortedByProb.map((w, si) => {
+  const h = w.prob * BAR_MAX_H / sortedByProb[0].prob;
+  const geo = new THREE.BoxGeometry(BAR_WIDTH, h, BAR_WIDTH * 0.5);
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.color,
+    emissive: w.color,
+    emissiveIntensity: 0.2,
+    transparent: true,
+    opacity: 0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(si * (BAR_WIDTH + BAR_GAP) - (sortedByProb.length - 1) * (BAR_WIDTH + BAR_GAP) / 2, h / 2, 0);
+  barChartGroup.add(mesh);
+
+  const pctLabel = makeNumberSprite((w.prob * 100).toFixed(0) + '%', w.color);
+  pctLabel.position.set(mesh.position.x, h + 0.5, 0);
+  pctLabel.material.opacity = 0;
+  barChartGroup.add(pctLabel);
+
+  return { mesh, label: pctLabel, targetOpacity: 0 };
+});
+
+/* ===================================================================
+   SAMPLING WHEEL (stage 5)
+   =================================================================== */
+
+const wheelGroup = new THREE.Group();
+wheelGroup.position.set(7.5, 5, -2);
+scene.add(wheelGroup);
+
+function buildWheel() {
+  const radius = 3;
+  const segments = 64;
+  let angleStart = 0;
+
+  // Sort by probability descending for the wheel
+  const sorted = WORDS.map((w, i) => ({ ...w, idx: i }))
+    .sort((a, b) => b.prob - a.prob);
+
+  sorted.forEach(w => {
+    const angle = w.prob * Math.PI * 2;
+    const geo = new THREE.RingGeometry(1.0, radius, segments, 1, angleStart, angle);
+    const mat = new THREE.MeshBasicMaterial({
+      color: w.color,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    wheelGroup.add(mesh);
+
+    // Label on the wheel
+    const midAngle = angleStart + angle / 2;
+    const labelR = radius * 0.65;
+    const lx = Math.cos(midAngle) * labelR;
+    const ly = Math.sin(midAngle) * labelR;
+    const lbl = makeTextSprite(w.name, 0xffffff, 26);
+    lbl.position.set(lx, ly, 0.1);
+    lbl.scale.set(2, 0.5, 1);
+    lbl.material.opacity = 0;
+    wheelGroup.add(lbl);
+
+    angleStart += angle;
+  });
+
+  // Pointer (triangle)
+  const ptrShape = new THREE.Shape();
+  ptrShape.moveTo(radius + 0.3, 0.3);
+  ptrShape.lineTo(radius + 0.3, -0.3);
+  ptrShape.lineTo(radius + 0.8, 0);
+  ptrShape.closePath();
+  const ptrGeo = new THREE.ShapeGeometry(ptrShape);
+  const ptrMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide });
+  const ptr = new THREE.Mesh(ptrGeo, ptrMat);
+  wheelGroup.add(ptr);
+
+  // "Selected" label
+  const selectedLabel = makeTextSprite('SELECTED: oven', 0xffb74d, 28);
+  selectedLabel.position.set(0, -radius - 1.2, 0);
+  selectedLabel.scale.set(4, 1, 1);
+  selectedLabel.material.opacity = 0;
+  wheelGroup.add(selectedLabel);
+}
+
+buildWheel();
+
+/* ===================================================================
+   ANIMATION STATE
+   =================================================================== */
+
+const animState = {
+  cameraTarget: new THREE.Vector3(0, 3, 20),
+  controlsTarget: new THREE.Vector3(0, 1, 0),
+  mode: 'logits',
+  showZeroLine: false,
+  showNumbers: false,
+  showSumLine: false,
+  showFormula: false,
+  showBarChart: false,
+  showWheel: false,
+};
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+// Build progress dots
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function setTargetsForStage(stageIdx) {
+  const s = STAGES[stageIdx];
+
+  animState.cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  animState.controlsTarget.set(s.target.x, s.target.y, s.target.z);
+  animState.mode = s.mode;
+  animState.showZeroLine = s.showZeroLine;
+  animState.showNumbers = s.showNumbers;
+  animState.showSumLine = s.showSumLine;
+  animState.showFormula = s.showFormula;
+  animState.showBarChart = s.showBarChart;
+  animState.showWheel = s.showWheel;
+
+  // Compute target positions and scales based on mode
+  WORDS.forEach((w, i) => {
+    const x = xForIndex(i);
+    let y, scale;
+
+    if (s.mode === 'logits') {
+      y = w.logit * LOGIT_SCALE;
+      scale = 1;
+    } else {
+      y = w.prob * PROB_SCALE;
+      // Scale spheres by probability (min 0.3, max 1.5)
+      scale = 0.3 + w.prob * 3.5;
+      scale = Math.min(scale, 1.5);
+    }
+
+    wordObjects[i].targetPos.set(x, y, 0);
+    wordObjects[i].targetScale = scale;
+  });
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+
+  // Reset wheel spin state on entering stage 5
+  if (idx === 4) {
+    wheelSpinTime = 0;
+    wheelHasSettled = false;
+  }
+}
+
+// Initialize
+setTargetsForStage(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+// Set initial positions immediately
+WORDS.forEach((w, i) => {
+  const x = xForIndex(i);
+  const y = w.logit * LOGIT_SCALE;
+  wordObjects[i].mesh.position.set(x, y, 0);
+  wordObjects[i].label.position.set(x, y + 1.0, 0);
+});
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera3D.aspect = w / h;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+let wheelSpinTime = 0;
+let wheelHasSettled = false;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Lerp word sphere positions & scales
+  wordObjects.forEach((wo, i) => {
+    wo.mesh.position.lerp(wo.targetPos, lerpSpeed);
+
+    const cs = wo.mesh.scale.x;
+    const ts = wo.targetScale;
+    const ns = cs + (ts - cs) * lerpSpeed;
+    wo.mesh.scale.setScalar(ns);
+
+    // Label above sphere
+    wo.label.position.set(
+      wo.mesh.position.x,
+      wo.mesh.position.y + 0.7 + ns * 0.3,
+      wo.mesh.position.z
+    );
+
+    // Subtle float
+    wo.mesh.position.y += Math.sin(t * 1.2 + i * 1.7) * 0.003;
+
+    // Glow pulse
+    wo.glow.material.opacity = 0.08 + Math.sin(t * 2 + i * 1.3) * 0.04;
+
+    // Number labels positioning
+    const numY = wo.mesh.position.y + 1.3 + ns * 0.3;
+    wo.logitLabel.position.set(wo.mesh.position.x, numY + 0.5, wo.mesh.position.z);
+    wo.probLabel.position.set(wo.mesh.position.x, numY + 0.5, wo.mesh.position.z);
+
+    // Number label opacity
+    const showLogitNums = animState.showNumbers && animState.mode === 'logits';
+    const showProbNums = animState.showNumbers && animState.mode === 'probs';
+    const logitTarget = showLogitNums ? 1 : 0;
+    const probTarget = showProbNums ? 1 : 0;
+    wo.logitLabel.material.opacity += (logitTarget - wo.logitLabel.material.opacity) * lerpSpeed * 1.5;
+    wo.probLabel.material.opacity += (probTarget - wo.probLabel.material.opacity) * lerpSpeed * 1.5;
+  });
+
+  // Lerp camera
+  camera3D.position.lerp(animState.cameraTarget, lerpSpeed * 0.7);
+  controls.target.lerp(animState.controlsTarget, lerpSpeed * 0.7);
+
+  // Zero line
+  const zeroTarget = animState.showZeroLine ? 0.5 : 0;
+  zeroLineMat.opacity += (zeroTarget - zeroLineMat.opacity) * lerpSpeed * 1.5;
+  zeroLabel.material.opacity += (zeroTarget - zeroLabel.material.opacity) * lerpSpeed * 1.5;
+
+  // Sum line
+  const sumTarget = animState.showSumLine ? 0.5 : 0;
+  sumLineMat.opacity += (sumTarget - sumLineMat.opacity) * lerpSpeed * 1.5;
+  sumLabel.material.opacity += (sumTarget - sumLabel.material.opacity) * lerpSpeed * 1.5;
+
+  // Formula
+  const formulaTarget = animState.showFormula ? 0.9 : 0;
+  formulaSprite.material.opacity += (formulaTarget - formulaSprite.material.opacity) * lerpSpeed * 1.5;
+
+  // Y-axis labels
+  const logitAxisTarget = animState.mode === 'logits' ? 0.7 : 0;
+  const probAxisTarget = animState.mode === 'probs' ? 0.7 : 0;
+  logitAxisLabel.material.opacity += (logitAxisTarget - logitAxisLabel.material.opacity) * lerpSpeed * 1.5;
+  probAxisLabel.material.opacity += (probAxisTarget - probAxisLabel.material.opacity) * lerpSpeed * 1.5;
+
+  // Bar chart
+  const barTarget = animState.showBarChart ? 1 : 0;
+  barObjects.forEach(bo => {
+    bo.mesh.material.opacity += (barTarget * 0.8 - bo.mesh.material.opacity) * lerpSpeed * 1.2;
+    bo.label.material.opacity += (barTarget - bo.label.material.opacity) * lerpSpeed * 1.2;
+  });
+
+  // Wheel
+  const wheelTarget = animState.showWheel ? 1 : 0;
+  wheelGroup.children.forEach(child => {
+    if (child.material) {
+      const tOp = wheelTarget * (child.geometry && child.geometry.type === 'RingGeometry' ? 0.85 : 0.9);
+      child.material.opacity += (tOp - child.material.opacity) * lerpSpeed * 1.2;
+    }
+  });
+
+  // Wheel spinning animation
+  if (animState.showWheel) {
+    wheelSpinTime += dt;
+    // Spin fast then decelerate over ~4 seconds
+    const spinDuration = 4.0;
+    if (wheelSpinTime < spinDuration) {
+      const progress = wheelSpinTime / spinDuration;
+      // Deceleration: fast at start, slows down
+      const speed = 8 * (1 - progress * progress);
+      wheelGroup.rotation.z += speed * dt;
+    } else if (!wheelHasSettled) {
+      wheelHasSettled = true;
+      // Snap to show "oven" under pointer (oven occupies angles 0 to prob*2PI)
+      // Pointer is at angle 0 (right side), so we want oven's midpoint there
+      // oven is the largest, starts at angle 0 in sorted order
+      const targetAngle = -WORDS[0].prob * Math.PI;
+      const currentRot = wheelGroup.rotation.z % (Math.PI * 2);
+      wheelGroup.rotation.z = currentRot - (currentRot % (Math.PI * 2)) + targetAngle + Math.PI * 12;
+    }
+
+    // Show "SELECTED" label after wheel settles
+    const lastChild = wheelGroup.children[wheelGroup.children.length - 1];
+    if (lastChild && lastChild.material) {
+      const selectedTarget = wheelHasSettled ? 1 : 0;
+      lastChild.material.opacity += (selectedTarget - lastChild.material.opacity) * lerpSpeed;
+    }
+  } else {
+    wheelGroup.rotation.z = 0;
+  }
+
+  // Grid slow rotation
+  gridHelper.rotation.y = t * 0.015;
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+
+</script>
+</body>
+</html>

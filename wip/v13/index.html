@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attention: How the Model Focuses</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-the      { background: rgba(158,158,158,0.2);  color: #616161; }
+  .word-chicken  { background: rgba(255,183,77,0.2);   color: #e68a00; }
+  .word-crossed  { background: rgba(66,165,245,0.2);   color: #1565c0; }
+  .word-road     { background: rgba(102,187,106,0.2);  color: #2e7d32; }
+  .word-was      { background: rgba(171,71,188,0.2);   color: #7b1fa2; }
+  .word-delicious { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   WORD DATA
+   =================================================================== */
+
+const WORDS = [
+  { name: 'The',      color: 0x9e9e9e, cssClass: 'word-the' },
+  { name: 'chicken',  color: 0xffb74d, cssClass: 'word-chicken' },
+  { name: 'crossed',  color: 0x42a5f5, cssClass: 'word-crossed' },
+  { name: 'the',      color: 0x9e9e9e, cssClass: 'word-the' },
+  { name: 'road',     color: 0x66bb6a, cssClass: 'word-road' },
+];
+
+// Sentence 2 words for stage 3
+const WORDS_ALT = [
+  { name: 'The',       color: 0x9e9e9e, cssClass: 'word-the' },
+  { name: 'chicken',   color: 0xffb74d, cssClass: 'word-chicken' },
+  { name: 'was',       color: 0xab47bc, cssClass: 'word-was' },
+  { name: 'delicious', color: 0xef5350, cssClass: 'word-delicious' },
+];
+
+/* ===================================================================
+   ATTENTION WEIGHTS (0-1) between word pairs
+   =================================================================== */
+
+// Full uniform weights for stage 1
+function uniformWeights() {
+  const w = {};
+  for (let i = 0; i < 5; i++) {
+    for (let j = i + 1; j < 5; j++) {
+      w[`${i}-${j}`] = 0.15;
+    }
+  }
+  return w;
+}
+
+// Learned attention for stage 2
+function learnedWeights() {
+  return {
+    '0-1': 0.15,  // The -> chicken
+    '0-2': 0.05,  // The -> crossed
+    '0-3': 0.05,  // The -> the
+    '0-4': 0.05,  // The -> road
+    '1-2': 0.95,  // chicken -> crossed (strong)
+    '1-3': 0.05,  // chicken -> the
+    '1-4': 0.45,  // chicken -> road (medium)
+    '2-3': 0.10,  // crossed -> the
+    '2-4': 0.85,  // crossed -> road (strong)
+    '3-4': 0.30,  // the -> road
+  };
+}
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+function tag(w) {
+  return `<span class="word-tag ${w.cssClass}">${w.name}</span>`;
+}
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'Every word watches every other word',
+    body: `<p>Consider the sentence: ${tag(WORDS[0])} ${tag(WORDS[1])} ${tag(WORDS[2])} ${tag(WORDS[3])} ${tag(WORDS[4])}.</p>
+           <p>In a transformer, every word can <strong>"attend to"</strong> every other word. Each word asks: <em>"Which other words matter for understanding me?"</em></p>
+           <p>The faint lines between every pair represent this fully connected attention &mdash; every word is watching every other word simultaneously.</p>`,
+    mode: 'full-attention',
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'But some connections matter more',
+    body: `<p>The model <strong>learns</strong> which connections carry meaning. Line brightness and thickness now show attention weight.</p>
+           <p>${tag(WORDS[1])} attends strongly to ${tag(WORDS[2])} &mdash; "what did the chicken do?" ${tag(WORDS[2])} attends strongly to ${tag(WORDS[4])} &mdash; "crossed <em>what</em>?"</p>
+           <p>Meanwhile, connections to function words like ${tag(WORDS[0])} fade to near-invisible. The model has learned to focus on what matters.</p>`,
+    mode: 'learned-attention',
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Context shapes meaning',
+    body: `<p>The same word means different things depending on what it attends to.</p>
+           <p>In <em>"The chicken crossed the road"</em>, ${tag(WORDS[1])} attends to ${tag(WORDS[2])} and ${tag(WORDS[4])} &mdash; it means an <strong>animal</strong> in motion.</p>
+           <p>In <em>"The chicken was delicious"</em>, ${tag(WORDS[1])} attends to <span class="word-tag word-was">was</span> and <span class="word-tag word-delicious">delicious</span> &mdash; it means <strong>food</strong> on a plate.</p>
+           <p>Attention doesn't just connect words &mdash; it <em>reshapes</em> what they mean.</p>`,
+    mode: 'context-shift',
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Attention builds understanding',
+    body: `<p>Transformers stack <strong>multiple layers</strong> of attention, each one refining the previous.</p>
+           <p><strong>Layer 1</strong> (bottom, blue): Grammar-level connections. "The" modifies "chicken"; articles attach to nouns.</p>
+           <p><strong>Layer 2</strong> (middle, orange): Semantic relationships. "Chicken" connects to "road" &mdash; the model grasps the motion concept.</p>
+           <p><strong>Layer 3</strong> (top, purple): Narrative understanding. Whole-sentence patterns emerge &mdash; an animal crossing something.</p>`,
+    mode: 'layers',
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'This is how meaning emerges',
+    body: `<p>All layers combine. Each word's final representation is a <strong>rich vector</strong> &mdash; shaped by every word it attended to across every layer.</p>
+           <p>The spheres now sit in embedding space, positioned by the <em>full context</em> of the sentence. Words that interact strongly are pulled closer together.</p>
+           <p>The model doesn't just know what a word means &mdash; it knows what it means <strong>here</strong>, in this sentence, in this context.</p>`,
+    mode: 'final',
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.008);
+
+const cam = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+cam.position.set(0, 2, 18);
+
+const controls = new OrbitControls(cam, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 6;
+controls.maxDistance = 40;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight.position.set(-5, 5, 5);
+scene.add(pointLight);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(20, 20, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   HELPER: Canvas text sprite
+   =================================================================== */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = 'bold 30px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 24;
+  const ph = 40;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.75)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(3, 0.75, 1);
+  return sprite;
+}
+
+function makeLayerLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 48;
+
+  ctx.font = 'bold 22px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},0.85)`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(5, 0.6, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   WORD SPHERES - Main sentence (5 words)
+   =================================================================== */
+
+const LINE_SPACING = 3.0;
+const LINE_Y = 0;
+
+function sentenceX(i, count) {
+  return (i - (count - 1) / 2) * LINE_SPACING;
+}
+
+const wordObjects = WORDS.map((w, i) => {
+  const geo = new THREE.SphereGeometry(0.4, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.color,
+    emissive: w.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(sentenceX(i, 5), LINE_Y, 0);
+  scene.add(mesh);
+
+  const glowGeo = new THREE.SphereGeometry(0.6, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: w.color,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+
+  const label = makeTextSprite(w.name, w.color);
+  label.position.set(sentenceX(i, 5), LINE_Y + 0.9, 0);
+  scene.add(label);
+
+  return { mesh, label, glow, targetPos: new THREE.Vector3(sentenceX(i, 5), LINE_Y, 0), visible: true, targetOpacity: 1.0 };
+});
+
+/* ===================================================================
+   WORD SPHERES - Alt sentence (4 words) for stage 3
+   =================================================================== */
+
+const ALT_Y = -3.5;
+
+const altWordObjects = WORDS_ALT.map((w, i) => {
+  const geo = new THREE.SphereGeometry(0.4, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: w.color,
+    emissive: w.color,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    metalness: 0.1,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(sentenceX(i, 4), ALT_Y, 0);
+  mesh.visible = false;
+  scene.add(mesh);
+
+  const glowGeo = new THREE.SphereGeometry(0.6, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: w.color,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+
+  const label = makeTextSprite(w.name, w.color);
+  label.position.set(sentenceX(i, 4), ALT_Y + 0.9, 0);
+  label.visible = false;
+  scene.add(label);
+
+  return { mesh, label, glow, targetPos: new THREE.Vector3(sentenceX(i, 4), ALT_Y, 0), visible: false, targetOpacity: 0.0 };
+});
+
+/* ===================================================================
+   ATTENTION LINES - Main sentence
+   =================================================================== */
+
+const attentionGroup = new THREE.Group();
+scene.add(attentionGroup);
+let attentionLines = [];
+
+function buildAttentionLines(weights, yOffset, wordCount, color) {
+  const lines = [];
+  for (let i = 0; i < wordCount; i++) {
+    for (let j = i + 1; j < wordCount; j++) {
+      const key = `${i}-${j}`;
+      const weight = weights[key] || 0;
+
+      const points = [
+        new THREE.Vector3(sentenceX(i, wordCount), yOffset, 0),
+        new THREE.Vector3(sentenceX(j, wordCount), yOffset, 0),
+      ];
+
+      // Curved line via midpoint
+      const mid = new THREE.Vector3(
+        (sentenceX(i, wordCount) + sentenceX(j, wordCount)) / 2,
+        yOffset + (Math.abs(j - i) * 0.5 + 0.4),
+        0
+      );
+      const curve = new THREE.QuadraticBezierCurve3(points[0], mid, points[1]);
+      const curvePoints = curve.getPoints(30);
+      const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
+
+      const lineColor = color || blendColors(WORDS[i].color, WORDS[j].color);
+      const mat = new THREE.LineBasicMaterial({
+        color: lineColor,
+        transparent: true,
+        opacity: 0,
+        linewidth: 1,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.userData = { targetOpacity: 0, weight, i, j, yOffset, wordCount, baseColor: lineColor };
+      attentionGroup.add(line);
+      lines.push(line);
+    }
+  }
+  return lines;
+}
+
+function blendColors(c1, c2) {
+  const a = new THREE.Color(c1);
+  const b = new THREE.Color(c2);
+  return a.clone().lerp(b, 0.5);
+}
+
+// Main sentence attention lines
+attentionLines = buildAttentionLines(uniformWeights(), LINE_Y, 5);
+
+// Alt sentence attention lines for stage 3
+const altAttentionWeights = {
+  '0-1': 0.15,
+  '0-2': 0.05,
+  '0-3': 0.05,
+  '1-2': 0.70,
+  '1-3': 0.95,
+  '2-3': 0.50,
+};
+
+let altAttentionLines = [];
+
+/* ===================================================================
+   LAYER SYSTEM (Stage 4)
+   =================================================================== */
+
+const layerGroup = new THREE.Group();
+scene.add(layerGroup);
+
+const LAYER_COLORS = [0x42a5f5, 0xffb74d, 0xab47bc]; // blue, orange, purple
+const LAYER_Y_OFFSETS = [-3, 0, 3];
+const LAYER_NAMES = ['Layer 1: Grammar', 'Layer 2: Semantics', 'Layer 3: Narrative'];
+
+const LAYER_WEIGHTS = [
+  // Layer 1: Grammar - articles to nouns
+  { '0-1': 0.85, '0-2': 0.05, '0-3': 0.10, '0-4': 0.05, '1-2': 0.15, '1-3': 0.05, '1-4': 0.05, '2-3': 0.10, '2-4': 0.15, '3-4': 0.80 },
+  // Layer 2: Semantics - meaning connections
+  { '0-1': 0.05, '0-2': 0.05, '0-3': 0.05, '0-4': 0.05, '1-2': 0.80, '1-3': 0.05, '1-4': 0.55, '2-3': 0.10, '2-4': 0.85, '3-4': 0.15 },
+  // Layer 3: Narrative - whole sentence
+  { '0-1': 0.30, '0-2': 0.40, '0-3': 0.15, '0-4': 0.35, '1-2': 0.70, '1-3': 0.25, '1-4': 0.65, '2-3': 0.30, '2-4': 0.70, '3-4': 0.40 },
+];
+
+// Per-layer word spheres, attention lines, labels
+const layerObjects = [];
+
+LAYER_COLORS.forEach((lColor, li) => {
+  const yOff = LAYER_Y_OFFSETS[li];
+  const spheres = [];
+  const labels = [];
+
+  WORDS.forEach((w, wi) => {
+    const geo = new THREE.SphereGeometry(0.3, 24, 24);
+    const mat = new THREE.MeshStandardMaterial({
+      color: w.color,
+      emissive: w.color,
+      emissiveIntensity: 0.3,
+      roughness: 0.4,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(sentenceX(wi, 5), yOff, 0);
+    mesh.visible = false;
+    layerGroup.add(mesh);
+    spheres.push(mesh);
+
+    const lbl = makeTextSprite(w.name, w.color);
+    lbl.position.set(sentenceX(wi, 5), yOff + 0.7, 0);
+    lbl.visible = false;
+    lbl.material.opacity = 0;
+    layerGroup.add(lbl);
+    labels.push(lbl);
+  });
+
+  // Layer label
+  const layerLabel = makeLayerLabel(LAYER_NAMES[li], lColor);
+  layerLabel.position.set(-8.5, yOff, 0);
+  layerLabel.visible = false;
+  layerLabel.material.opacity = 0;
+  layerGroup.add(layerLabel);
+
+  // Attention lines for this layer
+  const lLines = [];
+  for (let i = 0; i < 5; i++) {
+    for (let j = i + 1; j < 5; j++) {
+      const key = `${i}-${j}`;
+      const weight = LAYER_WEIGHTS[li][key] || 0;
+
+      const mid = new THREE.Vector3(
+        (sentenceX(i, 5) + sentenceX(j, 5)) / 2,
+        yOff + (Math.abs(j - i) * 0.35 + 0.3),
+        0
+      );
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(sentenceX(i, 5), yOff, 0),
+        mid,
+        new THREE.Vector3(sentenceX(j, 5), yOff, 0)
+      );
+      const curvePoints = curve.getPoints(30);
+      const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
+      const mat = new THREE.LineBasicMaterial({
+        color: lColor,
+        transparent: true,
+        opacity: 0,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.userData = { targetOpacity: 0, weight };
+      line.visible = false;
+      layerGroup.add(line);
+      lLines.push(line);
+    }
+  }
+
+  // Thin vertical connectors between layers
+  const verticals = [];
+  if (li < 2) {
+    WORDS.forEach((w, wi) => {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(sentenceX(wi, 5), yOff + 0.35, 0),
+        new THREE.Vector3(sentenceX(wi, 5), LAYER_Y_OFFSETS[li + 1] - 0.35, 0),
+      ]);
+      const mat = new THREE.LineBasicMaterial({
+        color: 0x444466,
+        transparent: true,
+        opacity: 0,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.visible = false;
+      line.userData = { targetOpacity: 0 };
+      layerGroup.add(line);
+      verticals.push(line);
+    });
+  }
+
+  layerObjects.push({ spheres, labels, lines: lLines, layerLabel, verticals, color: lColor });
+});
+
+/* ===================================================================
+   FINAL STAGE: Merged spheres in embedding space
+   =================================================================== */
+
+// Positions in "embedding space" after full attention
+const FINAL_POSITIONS = [
+  { x: -4.5, y: -1.0, z: -1.5 },  // The (function word, drifts away)
+  { x: 0.5,  y: 2.5,  z: 1.0 },   // chicken (central agent)
+  { x: 2.5,  y: 1.5,  z: -0.5 },  // crossed (action, near road)
+  { x: -3.5, y: -1.5, z: 1.0 },   // the (function word)
+  { x: 3.0,  y: 0.5,  z: -1.0 },  // road (destination)
+];
+
+/* ===================================================================
+   ANIMATION STATE
+   =================================================================== */
+
+const animState = {
+  cameraPos: new THREE.Vector3(0, 2, 18),
+  controlsTarget: new THREE.Vector3(0, 0, 0),
+  mode: 'full-attention',
+  showAlt: false,
+  showLayers: false,
+  showFinal: false,
+  autoRotate: false,
+};
+
+/* ===================================================================
+   STAGE TRANSITIONS
+   =================================================================== */
+
+function applyStage(idx) {
+  const s = STAGES[idx];
+  animState.mode = s.mode;
+
+  // Reset all
+  animState.showAlt = false;
+  animState.showLayers = false;
+  animState.showFinal = false;
+  animState.autoRotate = false;
+
+  // Hide alt sentence
+  altWordObjects.forEach(wo => { wo.targetOpacity = 0; });
+
+  // Hide layers
+  layerObjects.forEach(lo => {
+    lo.spheres.forEach(s => { s.userData.targetOpacity = 0; });
+    lo.labels.forEach(l => { l.userData = l.userData || {}; l.userData.targetOpacity = 0; });
+    lo.lines.forEach(l => { l.userData.targetOpacity = 0; });
+    lo.layerLabel.userData = lo.layerLabel.userData || {};
+    lo.layerLabel.userData.targetOpacity = 0;
+    lo.verticals.forEach(v => { v.userData.targetOpacity = 0; });
+  });
+
+  switch (s.mode) {
+    case 'full-attention': {
+      // Show all 5 words in a line, uniform attention
+      wordObjects.forEach((wo, i) => {
+        wo.targetPos.set(sentenceX(i, 5), LINE_Y, 0);
+        wo.targetOpacity = 1.0;
+      });
+      const uw = uniformWeights();
+      attentionLines.forEach(line => {
+        const key = `${line.userData.i}-${line.userData.j}`;
+        line.userData.targetOpacity = uw[key] || 0.15;
+      });
+      animState.cameraPos.set(0, 2, 16);
+      animState.controlsTarget.set(0, 0, 0);
+      break;
+    }
+
+    case 'learned-attention': {
+      wordObjects.forEach((wo, i) => {
+        wo.targetPos.set(sentenceX(i, 5), LINE_Y, 0);
+        wo.targetOpacity = 1.0;
+      });
+      const lw = learnedWeights();
+      attentionLines.forEach(line => {
+        const key = `${line.userData.i}-${line.userData.j}`;
+        line.userData.targetOpacity = lw[key] || 0.03;
+      });
+      animState.cameraPos.set(0, 2, 16);
+      animState.controlsTarget.set(0, 0, 0);
+      break;
+    }
+
+    case 'context-shift': {
+      animState.showAlt = true;
+      // Main sentence moves up
+      wordObjects.forEach((wo, i) => {
+        wo.targetPos.set(sentenceX(i, 5), 2.5, 0);
+        wo.targetOpacity = 1.0;
+      });
+      // "chicken" in sentence 1 moves slightly toward road/animal space
+      wordObjects[1].targetPos.set(sentenceX(1, 5) + 0.3, 2.5, -0.5);
+
+      const lw = learnedWeights();
+      attentionLines.forEach(line => {
+        const key = `${line.userData.i}-${line.userData.j}`;
+        line.userData.targetOpacity = lw[key] || 0.03;
+        // Shift y offset for main sentence
+        line.userData.yShift = 2.5;
+      });
+
+      // Alt sentence
+      altWordObjects.forEach((wo, i) => {
+        wo.targetPos.set(sentenceX(i, 4), -2.5, 0);
+        wo.targetOpacity = 1.0;
+      });
+      // "chicken" in sentence 2 shifts toward food space
+      altWordObjects[1].targetPos.set(sentenceX(1, 4) - 0.3, -2.5, 0.5);
+
+      // Build alt attention lines if not done
+      if (altAttentionLines.length === 0) {
+        for (let i = 0; i < 4; i++) {
+          for (let j = i + 1; j < 4; j++) {
+            const key = `${i}-${j}`;
+            const weight = altAttentionWeights[key] || 0;
+            const mid = new THREE.Vector3(
+              (sentenceX(i, 4) + sentenceX(j, 4)) / 2,
+              -2.5 + (Math.abs(j - i) * 0.5 + 0.4),
+              0
+            );
+            const curve = new THREE.QuadraticBezierCurve3(
+              new THREE.Vector3(sentenceX(i, 4), -2.5, 0),
+              mid,
+              new THREE.Vector3(sentenceX(j, 4), -2.5, 0)
+            );
+            const curvePoints = curve.getPoints(30);
+            const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
+            const lineColor = blendColors(WORDS_ALT[i].color, WORDS_ALT[j].color);
+            const mat = new THREE.LineBasicMaterial({
+              color: lineColor,
+              transparent: true,
+              opacity: 0,
+            });
+            const line = new THREE.Line(geo, mat);
+            line.userData = { targetOpacity: weight, weight, i, j };
+            attentionGroup.add(line);
+            altAttentionLines.push(line);
+          }
+        }
+      } else {
+        Object.entries(altAttentionWeights).forEach(([key, weight]) => {
+          const idx = altAttentionLines.findIndex(l => `${l.userData.i}-${l.userData.j}` === key);
+          if (idx >= 0) altAttentionLines[idx].userData.targetOpacity = weight;
+        });
+      }
+
+      // Sentence labels
+      animState.cameraPos.set(0, 0, 18);
+      animState.controlsTarget.set(0, 0, 0);
+      break;
+    }
+
+    case 'layers': {
+      animState.showLayers = true;
+      // Hide main word spheres
+      wordObjects.forEach(wo => { wo.targetOpacity = 0; });
+      attentionLines.forEach(l => { l.userData.targetOpacity = 0; });
+      altAttentionLines.forEach(l => { l.userData.targetOpacity = 0; });
+
+      layerObjects.forEach((lo, li) => {
+        lo.spheres.forEach(s => { s.userData.targetOpacity = 1.0; });
+        lo.labels.forEach(l => { l.userData = l.userData || {}; l.userData.targetOpacity = 1.0; });
+        lo.lines.forEach(l => {
+          l.userData.targetOpacity = l.userData.weight * 0.7;
+        });
+        lo.layerLabel.userData.targetOpacity = 1.0;
+        lo.verticals.forEach(v => { v.userData.targetOpacity = 0.2; });
+      });
+
+      animState.cameraPos.set(0, 0, 20);
+      animState.controlsTarget.set(0, 0, 0);
+      break;
+    }
+
+    case 'final': {
+      animState.showFinal = true;
+      animState.autoRotate = true;
+
+      wordObjects.forEach((wo, i) => {
+        wo.targetPos.set(FINAL_POSITIONS[i].x, FINAL_POSITIONS[i].y, FINAL_POSITIONS[i].z);
+        wo.targetOpacity = 1.0;
+      });
+
+      // Show connection lines between semantically related words
+      attentionLines.forEach(line => {
+        const { i, j } = line.userData;
+        const pi = FINAL_POSITIONS[i];
+        const pj = FINAL_POSITIONS[j];
+        const dist = Math.sqrt((pi.x-pj.x)**2 + (pi.y-pj.y)**2 + (pi.z-pj.z)**2);
+        line.userData.targetOpacity = Math.max(0, 1 - dist / 10) * 0.4;
+      });
+
+      altAttentionLines.forEach(l => { l.userData.targetOpacity = 0; });
+
+      animState.cameraPos.set(10, 6, 12);
+      animState.controlsTarget.set(0, 0.5, 0);
+      break;
+    }
+  }
+}
+
+/* ===================================================================
+   NARRATIVE & NAV
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  applyStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+applyStage(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  cam.aspect = w / h;
+  cam.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function rebuildMainAttentionGeometry() {
+  // Rebuild curved lines for main sentence when positions shift
+  attentionLines.forEach(line => {
+    const { i, j } = line.userData;
+    const yShift = line.userData.yShift || 0;
+    const pi = wordObjects[i].mesh.position;
+    const pj = wordObjects[j].mesh.position;
+
+    const mid = new THREE.Vector3(
+      (pi.x + pj.x) / 2,
+      Math.max(pi.y, pj.y) + (Math.abs(j - i) * 0.5 + 0.4),
+      (pi.z + pj.z) / 2
+    );
+    const curve = new THREE.QuadraticBezierCurve3(
+      pi.clone(),
+      mid,
+      pj.clone()
+    );
+    const curvePoints = curve.getPoints(30);
+    line.geometry.dispose();
+    line.geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+  });
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Main word spheres
+  wordObjects.forEach((wo, i) => {
+    wo.mesh.position.lerp(wo.targetPos, lerpSpeed);
+    wo.label.position.set(
+      wo.mesh.position.x,
+      wo.mesh.position.y + 0.9,
+      wo.mesh.position.z
+    );
+
+    // Float
+    wo.mesh.position.y += Math.sin(t * 1.2 + i * 1.7) * 0.003;
+
+    // Opacity fade
+    const targetOp = wo.targetOpacity;
+    wo.mesh.material.opacity = wo.mesh.material.opacity || 1;
+    wo.mesh.material.opacity += (targetOp - wo.mesh.material.opacity) * lerpSpeed * 2;
+    wo.mesh.material.transparent = true;
+    wo.mesh.visible = wo.mesh.material.opacity > 0.01;
+    wo.label.material.opacity += (targetOp - wo.label.material.opacity) * lerpSpeed * 2;
+    wo.label.visible = wo.label.material.opacity > 0.01;
+
+    // Glow pulse
+    if (wo.mesh.visible) {
+      wo.glow.material.opacity = (0.08 + Math.sin(t * 2 + i * 1.3) * 0.04) * wo.mesh.material.opacity;
+    }
+  });
+
+  // Alt word spheres
+  altWordObjects.forEach((wo, i) => {
+    const targetOp = wo.targetOpacity;
+    wo.mesh.position.lerp(wo.targetPos, lerpSpeed);
+    wo.label.position.set(
+      wo.mesh.position.x,
+      wo.mesh.position.y + 0.9,
+      wo.mesh.position.z
+    );
+    wo.mesh.position.y += Math.sin(t * 1.2 + i * 2.3) * 0.003;
+
+    wo.mesh.material.opacity = wo.mesh.material.opacity || 0;
+    wo.mesh.material.opacity += (targetOp - wo.mesh.material.opacity) * lerpSpeed * 2;
+    wo.mesh.material.transparent = true;
+    wo.mesh.visible = wo.mesh.material.opacity > 0.01;
+    wo.label.material.opacity += (targetOp - wo.label.material.opacity) * lerpSpeed * 2;
+    wo.label.visible = wo.label.material.opacity > 0.01;
+
+    if (wo.mesh.visible) {
+      wo.glow.material.opacity = (0.08 + Math.sin(t * 2 + i * 1.8) * 0.04) * wo.mesh.material.opacity;
+    }
+  });
+
+  // Rebuild attention line geometry to follow sphere positions
+  rebuildMainAttentionGeometry();
+
+  // Main attention lines
+  attentionLines.forEach(line => {
+    const target = line.userData.targetOpacity;
+    line.material.opacity += (target - line.material.opacity) * lerpSpeed * 1.5;
+    line.visible = line.material.opacity > 0.005;
+  });
+
+  // Alt attention lines
+  altAttentionLines.forEach(line => {
+    const target = line.userData.targetOpacity;
+    line.material.opacity += (target - line.material.opacity) * lerpSpeed * 1.5;
+    line.visible = line.material.opacity > 0.005;
+  });
+
+  // Layer objects
+  layerObjects.forEach((lo, li) => {
+    lo.spheres.forEach((s, si) => {
+      const target = s.userData.targetOpacity || 0;
+      s.material.opacity += (target - s.material.opacity) * lerpSpeed * 2;
+      s.visible = s.material.opacity > 0.01;
+
+      if (s.visible) {
+        s.position.y += Math.sin(t * 1.1 + si * 1.5 + li * 2) * 0.002;
+      }
+    });
+
+    lo.labels.forEach(l => {
+      const target = (l.userData && l.userData.targetOpacity) || 0;
+      l.material.opacity += (target - l.material.opacity) * lerpSpeed * 2;
+      l.visible = l.material.opacity > 0.01;
+    });
+
+    lo.lines.forEach(l => {
+      const target = l.userData.targetOpacity;
+      l.material.opacity += (target - l.material.opacity) * lerpSpeed * 1.5;
+      l.visible = l.material.opacity > 0.005;
+    });
+
+    if (lo.layerLabel.userData) {
+      const target = lo.layerLabel.userData.targetOpacity || 0;
+      lo.layerLabel.material.opacity += (target - lo.layerLabel.material.opacity) * lerpSpeed * 2;
+      lo.layerLabel.visible = lo.layerLabel.material.opacity > 0.01;
+    }
+
+    lo.verticals.forEach(v => {
+      const target = v.userData.targetOpacity;
+      v.material.opacity += (target - v.material.opacity) * lerpSpeed * 1.5;
+      v.visible = v.material.opacity > 0.005;
+    });
+  });
+
+  // Camera
+  cam.position.lerp(animState.cameraPos, lerpSpeed * 0.7);
+  controls.target.lerp(animState.controlsTarget, lerpSpeed * 0.7);
+  controls.autoRotate = animState.autoRotate;
+
+  // Grid
+  gridHelper.rotation.y = t * 0.02;
+
+  controls.update();
+  renderer.render(scene, cam);
+}
+
+animate();
+
+</script>
+</body>
+</html>

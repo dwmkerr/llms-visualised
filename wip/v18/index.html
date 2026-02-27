@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Steering the Ship: How Prompts Shape Completions</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .prompt-tag {
+    display: inline-block;
+    padding: 0.15em 0.5em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.92em;
+    margin: 0 0.05em;
+    font-family: 'Courier New', monospace;
+  }
+
+  .prompt-user    { background: rgba(66,165,245,0.15);  color: #1565c0; }
+  .prompt-system  { background: rgba(171,71,188,0.15);  color: #7b1fa2; }
+  .prompt-vague   { background: rgba(189,189,189,0.2);  color: #666; }
+  .prompt-specific { background: rgba(102,187,106,0.15); color: #2e7d32; }
+
+  .cluster-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .cluster-cooking  { background: rgba(255,152,0,0.2);  color: #e65100; }
+  .cluster-science  { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .cluster-emotion  { background: rgba(171,71,188,0.2);  color: #7b1fa2; }
+  .cluster-animals  { background: rgba(102,187,106,0.2); color: #2e7d32; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   CLUSTER DATA
+   =================================================================== */
+
+// Semantic clusters in 3D embedding space
+const CLUSTERS = {
+  cooking: {
+    center: new THREE.Vector3(-5, 3, -2),
+    color: 0xff9800,
+    label: 'Cooking',
+    words: ['recipe', 'bake', 'saut\u00e9', 'ingredient', 'simmer', 'flour', 'oven', 'broth', 'whisk', 'garnish', 'roast', 'chop'],
+  },
+  science: {
+    center: new THREE.Vector3(5, 3, -2),
+    color: 0x42a5f5,
+    label: 'Science',
+    words: ['molecule', 'protein', 'enzyme', 'cell', 'DNA', 'atom', 'reaction', 'compound', 'ion', 'isotope', 'peptide', 'nucleus'],
+  },
+  emotion: {
+    center: new THREE.Vector3(-3, -4, 3),
+    color: 0xab47bc,
+    label: 'Emotion',
+    words: ['joy', 'sorrow', 'anger', 'fear', 'love', 'grief', 'hope', 'anxiety', 'bliss', 'dread', 'calm', 'rage'],
+  },
+  animals: {
+    center: new THREE.Vector3(4, -3, 3),
+    color: 0x66bb6a,
+    label: 'Animals',
+    words: ['tiger', 'eagle', 'whale', 'fox', 'wolf', 'bear', 'hawk', 'deer', 'otter', 'parrot', 'gecko', 'heron'],
+  },
+};
+
+// Generate scattered points around each cluster center
+function generateClusterPoints(cluster, count, spread) {
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    pts.push(new THREE.Vector3(
+      cluster.center.x + (Math.random() - 0.5) * spread,
+      cluster.center.y + (Math.random() - 0.5) * spread,
+      cluster.center.z + (Math.random() - 0.5) * spread,
+    ));
+  }
+  return pts;
+}
+
+// Candidate cloud: spread everywhere
+function generateScatteredCloud(count, radius) {
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = Math.random() * radius;
+    pts.push(new THREE.Vector3(
+      r * Math.sin(phi) * Math.cos(theta),
+      r * Math.sin(phi) * Math.sin(theta),
+      r * Math.cos(phi),
+    ));
+  }
+  return pts;
+}
+
+// Focused cloud near a cluster intersection
+function generateFocusedCloud(center, count, spread) {
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    pts.push(new THREE.Vector3(
+      center.x + (Math.random() - 0.5) * spread,
+      center.y + (Math.random() - 0.5) * spread,
+      center.z + (Math.random() - 0.5) * spread,
+    ));
+  }
+  return pts;
+}
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'The prompt sets the direction',
+    body: `<p>Imagine all possible words and meanings arranged in a vast 3D space. Similar concepts cluster together: <span class="cluster-tag cluster-cooking">cooking</span> words group in warm tones, <span class="cluster-tag cluster-science">science</span> in blue, <span class="cluster-tag cluster-emotion">emotion</span> in purple, and <span class="cluster-tag cluster-animals">animals</span> in green.</p>
+           <p>A prompt like <span class="prompt-tag prompt-user">"Tell me about..."</span> starts in the center of this space &mdash; it hasn't committed to any direction yet.</p>
+           <p>Your prompt is a starting point in meaning-space. Where you start determines where you'll go.</p>`,
+    camera: { x: 0, y: 2, z: 22 },
+    target: { x: 0, y: 0, z: 0 },
+    mode: 'clusters',
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Vague prompt \u2192 scattered possibilities',
+    body: `<p>Prompt: <span class="prompt-tag prompt-vague">"Tell me about things."</span></p>
+           <p>With such a vague prompt, the candidate cloud is <strong>enormous</strong> &mdash; spread across the entire space. The next word could come from any cluster: cooking, science, emotion, animals, or anything in between.</p>
+           <p>The path could go in any direction. There's no gravitational pull toward any particular region of meaning.</p>
+           <p>A vague prompt gives the model too much freedom. The output could go anywhere.</p>`,
+    camera: { x: 0, y: 4, z: 24 },
+    target: { x: 0, y: 0, z: 0 },
+    mode: 'scattered',
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Specific prompt \u2192 focused possibilities',
+    body: `<p>Prompt: <span class="prompt-tag prompt-specific">"The molecular structure of chicken protein consists of..."</span></p>
+           <p>Now the candidate cloud is <strong>tiny</strong>, tightly clustered in the region where <span class="cluster-tag cluster-science">science</span> and <span class="cluster-tag cluster-cooking">cooking</span> overlap. Only technical words are plausible next: <em>amino acids, polypeptide chains, myosin</em>.</p>
+           <p>A specific prompt constrains the model to a narrow region of meaning-space. The output is focused and relevant.</p>`,
+    camera: { x: 2, y: 5, z: 18 },
+    target: { x: 0, y: 3, z: -2 },
+    mode: 'focused',
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'System prompts shape the whole landscape',
+    body: `<p>Same user prompt: <span class="prompt-tag prompt-user">"Tell me about chicken"</span> &mdash; but two different system prompts:</p>
+           <p><span class="prompt-tag prompt-system">"You are a chef"</span> &rarr; the path heads toward the <span class="cluster-tag cluster-cooking">cooking</span> cluster. Words like <em>roast, season, braise</em> become likely.</p>
+           <p><span class="prompt-tag prompt-system">"You are a biologist"</span> &rarr; the path heads toward the <span class="cluster-tag cluster-science">science</span> cluster. Words like <em>genome, species, anatomy</em> become likely.</p>
+           <p>System prompts bias the entire probability landscape, steering every subsequent word.</p>`,
+    camera: { x: 0, y: 6, z: 20 },
+    target: { x: 0, y: 1, z: -1 },
+    mode: 'system-prompts',
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Prompt engineering is navigation',
+    body: `<p>Think of it as navigation through meaning-space:</p>
+           <p>The <strong>prompt</strong> is your heading &mdash; it sets the initial direction. The <strong>system prompt</strong> is the wind &mdash; a persistent force biasing every step. Each <strong>generated word</strong> is a step along the path.</p>
+           <p>Good prompt engineering isn't magic &mdash; it's choosing your starting point and direction carefully, so the model's journey through meaning-space leads where you want it to go.</p>`,
+    camera: { x: 8, y: 10, z: 18 },
+    target: { x: 0, y: 0, z: 0 },
+    mode: 'compass',
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.012);
+
+const camera3d = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3d.position.set(0, 2, 22);
+
+const controls = new OrbitControls(camera3d, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 8;
+controls.maxDistance = 45;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x6666ff, 0.3, 50);
+pointLight.position.set(-5, 5, 5);
+scene.add(pointLight);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(24, 24, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   UTILITY: CANVAS TEXT SPRITES
+   =================================================================== */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, color, fontSize = 28, withBg = true) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 64;
+
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  if (withBg) {
+    const metrics = ctx.measureText(text);
+    const pw = metrics.width + 24;
+    const ph = 40;
+    const px = (canvas.width - pw) / 2;
+    const py = (canvas.height - ph) / 2;
+    ctx.fillStyle = 'rgba(10,10,15,0.75)';
+    roundRect(ctx, px, py, pw, ph, 8);
+    ctx.fill();
+  }
+
+  const c = new THREE.Color(color);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(5, 0.65, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   BUILD CLUSTER SPHERES
+   =================================================================== */
+
+const allClusterSpheres = [];
+const clusterLabels = [];
+const clusterGroups = {};
+
+Object.entries(CLUSTERS).forEach(([key, cluster]) => {
+  const group = new THREE.Group();
+  clusterGroups[key] = group;
+  scene.add(group);
+
+  const points = generateClusterPoints(cluster, cluster.words.length, 3.5);
+
+  points.forEach((pt, i) => {
+    // Main sphere
+    const geo = new THREE.SphereGeometry(0.22, 24, 24);
+    const mat = new THREE.MeshStandardMaterial({
+      color: cluster.color,
+      emissive: cluster.color,
+      emissiveIntensity: 0.3,
+      roughness: 0.3,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 1,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(pt);
+
+    // Glow
+    const glowGeo = new THREE.SphereGeometry(0.38, 24, 24);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: cluster.color,
+      transparent: true,
+      opacity: 0.1,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    mesh.add(glow);
+
+    group.add(mesh);
+
+    // Word label
+    const label = makeTextSprite(cluster.words[i], cluster.color, 20, true);
+    label.position.copy(pt);
+    label.position.y += 0.55;
+    label.material.opacity = 0.7;
+    group.add(label);
+
+    allClusterSpheres.push({
+      mesh, glow, label,
+      basePos: pt.clone(),
+      cluster: key,
+      targetOpacity: 1,
+    });
+  });
+
+  // Cluster label (large)
+  const clLabel = makeTextSprite(cluster.label, cluster.color, 36, false);
+  clLabel.position.copy(cluster.center);
+  clLabel.position.y += 3.2;
+  clLabel.scale.set(6, 1, 1);
+  group.add(clLabel);
+  clusterLabels.push({ sprite: clLabel, cluster: key, targetOpacity: 1 });
+});
+
+/* ===================================================================
+   PROMPT MARKER (center dot)
+   =================================================================== */
+
+const promptGeo = new THREE.SphereGeometry(0.35, 32, 32);
+const promptMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  emissive: 0xffffff,
+  emissiveIntensity: 0.5,
+  roughness: 0.2,
+  metalness: 0.1,
+  transparent: true,
+  opacity: 1,
+});
+const promptSphere = new THREE.Mesh(promptGeo, promptMat);
+promptSphere.position.set(0, 0, 0);
+scene.add(promptSphere);
+
+const promptGlow = new THREE.SphereGeometry(0.6, 32, 32);
+const promptGlowMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.15,
+});
+const promptGlowMesh = new THREE.Mesh(promptGlow, promptGlowMat);
+promptSphere.add(promptGlowMesh);
+
+const promptLabel = makeTextSprite('Prompt', 0xffffff, 26, true);
+promptLabel.position.set(0, 0.9, 0);
+scene.add(promptLabel);
+
+// Target position for prompt sphere
+const promptTargetPos = new THREE.Vector3(0, 0, 0);
+let promptTargetOpacity = 1;
+
+/* ===================================================================
+   CANDIDATE CLOUD (scattered / focused particles)
+   =================================================================== */
+
+const MAX_CANDIDATES = 200;
+const candidateGroup = new THREE.Group();
+scene.add(candidateGroup);
+
+const candidateSpheres = [];
+for (let i = 0; i < MAX_CANDIDATES; i++) {
+  const geo = new THREE.SphereGeometry(0.1, 12, 12);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  candidateGroup.add(mesh);
+  candidateSpheres.push({
+    mesh,
+    basePos: new THREE.Vector3(),
+    targetPos: new THREE.Vector3(),
+    targetOpacity: 0,
+  });
+}
+
+function setCandidatePositions(positions, color, opacity) {
+  candidateSpheres.forEach((cs, i) => {
+    if (i < positions.length) {
+      cs.targetPos.copy(positions[i]);
+      cs.targetOpacity = opacity;
+      cs.mesh.material.color.set(color);
+    } else {
+      cs.targetOpacity = 0;
+    }
+  });
+}
+
+function hideCandidates() {
+  candidateSpheres.forEach(cs => { cs.targetOpacity = 0; });
+}
+
+/* ===================================================================
+   PATH ARROWS (for system-prompt stage)
+   =================================================================== */
+
+const pathGroup = new THREE.Group();
+scene.add(pathGroup);
+
+function clearPaths() {
+  while (pathGroup.children.length > 0) {
+    const child = pathGroup.children[0];
+    pathGroup.remove(child);
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) child.material.dispose();
+  }
+}
+
+function buildCurvedPath(start, end, color, heightMul = 1) {
+  const mid = new THREE.Vector3().lerpVectors(start, end, 0.5);
+  mid.y += 2 * heightMul;
+
+  const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+  const points = curve.getPoints(40);
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.8,
+    linewidth: 2,
+  });
+  const line = new THREE.Line(geo, mat);
+  pathGroup.add(line);
+
+  // Arrowhead at end
+  const dir = new THREE.Vector3().subVectors(points[points.length - 1], points[points.length - 3]).normalize();
+  const coneGeo = new THREE.ConeGeometry(0.2, 0.6, 8);
+  const coneMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 });
+  const cone = new THREE.Mesh(coneGeo, coneMat);
+  cone.position.copy(end);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  pathGroup.add(cone);
+
+  // Path dots along curve for animated feel
+  for (let i = 0; i < points.length; i += 4) {
+    const dotGeo = new THREE.SphereGeometry(0.08, 8, 8);
+    const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5 });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.copy(points[i]);
+    pathGroup.add(dot);
+  }
+
+  return { line, cone };
+}
+
+// Path label sprites
+const pathLabels = [];
+function addPathLabel(text, position, color) {
+  const sprite = makeTextSprite(text, color, 22, true);
+  sprite.position.copy(position);
+  sprite.scale.set(7, 0.8, 1);
+  pathGroup.add(sprite);
+  pathLabels.push(sprite);
+}
+
+/* ===================================================================
+   COMPASS / MAP ELEMENTS (Stage 5)
+   =================================================================== */
+
+const compassGroup = new THREE.Group();
+scene.add(compassGroup);
+
+function buildCompass() {
+  // Compass ring
+  const ringGeo = new THREE.TorusGeometry(2.5, 0.06, 16, 64);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = Math.PI / 2;
+  compassGroup.add(ring);
+
+  // Cardinal directions
+  const cardinals = [
+    { label: 'N', angle: 0, color: 0xff9800 },
+    { label: 'E', angle: Math.PI / 2, color: 0x42a5f5 },
+    { label: 'S', angle: Math.PI, color: 0xab47bc },
+    { label: 'W', angle: -Math.PI / 2, color: 0x66bb6a },
+  ];
+
+  cardinals.forEach(c => {
+    const sprite = makeTextSprite(c.label, c.color, 28, false);
+    sprite.position.set(
+      Math.sin(c.angle) * 3.2,
+      0,
+      -Math.cos(c.angle) * 3.2,
+    );
+    sprite.scale.set(2, 0.5, 1);
+    compassGroup.add(sprite);
+  });
+
+  // Compass needle
+  const needlePoints = [
+    new THREE.Vector3(0, 0.1, -2),
+    new THREE.Vector3(0, 0.1, 2),
+  ];
+  const needleGeo = new THREE.BufferGeometry().setFromPoints(needlePoints);
+  const needleMat = new THREE.LineBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
+  const needle = new THREE.Line(needleGeo, needleMat);
+  compassGroup.add(needle);
+
+  // Needle tip
+  const tipGeo = new THREE.ConeGeometry(0.15, 0.5, 6);
+  const tipMat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
+  const tip = new THREE.Mesh(tipGeo, tipMat);
+  tip.position.set(0, 0.1, -2.2);
+  tip.rotation.x = Math.PI;
+  compassGroup.add(tip);
+
+  compassGroup.position.set(0, 0.2, 0);
+  compassGroup.visible = false;
+}
+
+buildCompass();
+
+// Journey path for stage 5
+function buildJourneyPath() {
+  const waypoints = [
+    new THREE.Vector3(0, 0.5, 0),
+    new THREE.Vector3(-1.5, 1.5, -0.5),
+    new THREE.Vector3(-3, 2.5, -1),
+    new THREE.Vector3(-4.2, 3, -1.8),
+  ];
+
+  const curve = new THREE.CatmullRomCurve3(waypoints);
+  const points = curve.getPoints(50);
+  const geo = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xffcc00,
+    transparent: true,
+    opacity: 0.7,
+  });
+  const line = new THREE.Line(geo, mat);
+  pathGroup.add(line);
+
+  // Footstep dots
+  for (let i = 0; i < points.length; i += 5) {
+    const dotGeo = new THREE.SphereGeometry(0.12, 8, 8);
+    const dotMat = new THREE.MeshBasicMaterial({
+      color: 0xffcc00,
+      transparent: true,
+      opacity: 0.4 + (i / points.length) * 0.4,
+    });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.copy(points[i]);
+    pathGroup.add(dot);
+  }
+
+  // "Steps" labels
+  addPathLabel('Start: Prompt', waypoints[0].clone().add(new THREE.Vector3(0, 1, 0)), 0xffffff);
+  addPathLabel('Step 1', waypoints[1].clone().add(new THREE.Vector3(0, 0.8, 0)), 0xffcc00);
+  addPathLabel('Step 2', waypoints[2].clone().add(new THREE.Vector3(0, 0.8, 0)), 0xffcc00);
+  addPathLabel('Destination', waypoints[3].clone().add(new THREE.Vector3(0, 0.8, 0)), 0xff9800);
+
+  // Arrow at end
+  const dir = new THREE.Vector3().subVectors(waypoints[3], waypoints[2]).normalize();
+  const coneGeo = new THREE.ConeGeometry(0.2, 0.6, 8);
+  const coneMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.8 });
+  const cone = new THREE.Mesh(coneGeo, coneMat);
+  cone.position.copy(waypoints[3]);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  pathGroup.add(cone);
+}
+
+/* ===================================================================
+   WIND LINES (Stage 5 - system prompt as "wind")
+   =================================================================== */
+
+function buildWindLines() {
+  const windColor = 0xab47bc;
+  for (let i = 0; i < 8; i++) {
+    const y = -2 + Math.random() * 8;
+    const z = -4 + Math.random() * 8;
+    const startX = 6;
+    const endX = -6;
+    const points = [];
+    for (let t = 0; t <= 1; t += 0.05) {
+      points.push(new THREE.Vector3(
+        startX + (endX - startX) * t,
+        y + Math.sin(t * Math.PI * 2) * 0.4,
+        z + Math.cos(t * Math.PI * 3) * 0.3,
+      ));
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({
+      color: windColor,
+      transparent: true,
+      opacity: 0.15,
+    });
+    const line = new THREE.Line(geo, mat);
+    pathGroup.add(line);
+  }
+
+  addPathLabel('System Prompt = Wind', new THREE.Vector3(3, 6, 0), 0xab47bc);
+  addPathLabel('Each Word = A Step', new THREE.Vector3(-3, -2, 0), 0xffcc00);
+  addPathLabel('Prompt = Heading', new THREE.Vector3(0, -0.8, 0), 0xffffff);
+}
+
+/* ===================================================================
+   STAGE TRANSITIONS
+   =================================================================== */
+
+let currentStageMode = '';
+
+function applyStageMode(mode) {
+  currentStageMode = mode;
+  clearPaths();
+  hideCandidates();
+  compassGroup.visible = false;
+
+  // Reset cluster sphere opacity targets
+  allClusterSpheres.forEach(cs => { cs.targetOpacity = 1; });
+  clusterLabels.forEach(cl => { cl.targetOpacity = 1; });
+
+  switch (mode) {
+    case 'clusters': {
+      promptTargetPos.set(0, 0, 0);
+      promptTargetOpacity = 1;
+      break;
+    }
+
+    case 'scattered': {
+      promptTargetPos.set(0, 0, 0);
+      promptTargetOpacity = 1;
+      const scattered = generateScatteredCloud(MAX_CANDIDATES, 10);
+      setCandidatePositions(scattered, 0x999999, 0.25);
+      break;
+    }
+
+    case 'focused': {
+      // Between science and cooking clusters
+      const focusCenter = new THREE.Vector3(0, 3.5, -2);
+      promptTargetPos.copy(focusCenter);
+      promptTargetOpacity = 1;
+      const focused = generateFocusedCloud(focusCenter, 40, 2);
+      setCandidatePositions(focused, 0x88ccff, 0.5);
+      // Dim unrelated clusters
+      allClusterSpheres.forEach(cs => {
+        if (cs.cluster === 'emotion' || cs.cluster === 'animals') {
+          cs.targetOpacity = 0.15;
+        }
+      });
+      clusterLabels.forEach(cl => {
+        if (cl.cluster === 'emotion' || cl.cluster === 'animals') {
+          cl.targetOpacity = 0.15;
+        }
+      });
+      break;
+    }
+
+    case 'system-prompts': {
+      promptTargetPos.set(0, 0, 0);
+      promptTargetOpacity = 1;
+
+      // Chef path -> cooking cluster
+      const chefEnd = CLUSTERS.cooking.center.clone();
+      chefEnd.y -= 0.5;
+      buildCurvedPath(
+        new THREE.Vector3(0, 0, 0),
+        chefEnd,
+        CLUSTERS.cooking.color,
+        1.5,
+      );
+      addPathLabel('"You are a chef"', new THREE.Vector3(-3, 5.5, -1.5), CLUSTERS.cooking.color);
+
+      // Biologist path -> science cluster
+      const bioEnd = CLUSTERS.science.center.clone();
+      bioEnd.y -= 0.5;
+      buildCurvedPath(
+        new THREE.Vector3(0, 0, 0),
+        bioEnd,
+        CLUSTERS.science.color,
+        1.2,
+      );
+      addPathLabel('"You are a biologist"', new THREE.Vector3(4, 5.5, -1.5), CLUSTERS.science.color);
+
+      // Prompt label
+      addPathLabel('"Tell me about chicken"', new THREE.Vector3(0, -1.2, 0), 0xffffff);
+
+      break;
+    }
+
+    case 'compass': {
+      promptTargetPos.set(0, 0.5, 0);
+      promptTargetOpacity = 1;
+      compassGroup.visible = true;
+      buildJourneyPath();
+      buildWindLines();
+      break;
+    }
+  }
+}
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+// Build progress dots
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+// Animation targets
+const cameraTarget = new THREE.Vector3(0, 2, 22);
+const controlsTarget = new THREE.Vector3(0, 0, 0);
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+
+  const s = STAGES[idx];
+  cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  controlsTarget.set(s.target.x, s.target.y, s.target.z);
+
+  applyStageMode(s.mode);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+applyStageMode(STAGES[0].mode);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStage(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStage(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera3d.aspect = w / h;
+  camera3d.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Lerp camera
+  camera3d.position.lerp(cameraTarget, lerpSpeed * 0.6);
+  controls.target.lerp(controlsTarget, lerpSpeed * 0.6);
+
+  // Lerp prompt sphere
+  promptSphere.position.lerp(promptTargetPos, lerpSpeed);
+  promptLabel.position.set(
+    promptSphere.position.x,
+    promptSphere.position.y + 0.9,
+    promptSphere.position.z,
+  );
+  promptMat.opacity += (promptTargetOpacity - promptMat.opacity) * lerpSpeed;
+  promptGlowMat.opacity += (promptTargetOpacity * 0.15 - promptGlowMat.opacity) * lerpSpeed;
+  promptLabel.material.opacity += (promptTargetOpacity - promptLabel.material.opacity) * lerpSpeed;
+
+  // Pulse prompt glow
+  promptGlowMat.opacity += Math.sin(t * 2) * 0.02;
+
+  // Lerp cluster spheres
+  allClusterSpheres.forEach((cs, i) => {
+    const targetOp = cs.targetOpacity;
+    cs.mesh.material.opacity += (targetOp - cs.mesh.material.opacity) * lerpSpeed;
+    cs.glow.material.opacity += (targetOp * 0.1 - cs.glow.material.opacity) * lerpSpeed;
+    cs.label.material.opacity += (targetOp * 0.7 - cs.label.material.opacity) * lerpSpeed;
+
+    // Subtle float
+    cs.mesh.position.y = cs.basePos.y + Math.sin(t * 0.8 + i * 1.3) * 0.08;
+    cs.label.position.y = cs.mesh.position.y + 0.55;
+  });
+
+  // Lerp cluster labels
+  clusterLabels.forEach(cl => {
+    cl.sprite.material.opacity += (cl.targetOpacity - cl.sprite.material.opacity) * lerpSpeed;
+  });
+
+  // Lerp candidate spheres
+  candidateSpheres.forEach((cs, i) => {
+    cs.mesh.position.lerp(cs.targetPos, lerpSpeed * 0.8);
+    cs.mesh.material.opacity += (cs.targetOpacity - cs.mesh.material.opacity) * lerpSpeed;
+
+    // Twinkle effect
+    if (cs.targetOpacity > 0) {
+      cs.mesh.material.opacity += Math.sin(t * 3 + i * 0.7) * 0.05;
+    }
+  });
+
+  // Compass rotation
+  if (compassGroup.visible) {
+    compassGroup.rotation.y = Math.sin(t * 0.3) * 0.2;
+  }
+
+  // Animate path dots (pulsing)
+  pathGroup.children.forEach((child, i) => {
+    if (child.isMesh && child.geometry.type === 'SphereGeometry') {
+      child.material.opacity = Math.max(0.1, child.material.opacity + Math.sin(t * 2.5 + i * 0.5) * 0.05);
+    }
+  });
+
+  // Grid subtle rotation
+  gridHelper.rotation.y = t * 0.02;
+
+  controls.update();
+  renderer.render(scene, camera3d);
+}
+
+animate();
+
+</script>
+</body>
+</html>

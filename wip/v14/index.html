@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>One Word at a Time</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  /* ---- Left narrative panel ---- */
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    overflow-y: auto;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-prompt    { background: rgba(100,181,246,0.2);  color: #1565c0; }
+  .word-selected  { background: rgba(102,187,106,0.2);  color: #2e7d32; }
+  .word-cloud     { background: rgba(171,71,188,0.2);   color: #7b1fa2; }
+  .word-loop      { background: rgba(255,183,77,0.2);   color: #e68a00; }
+  .word-auto      { background: rgba(239,83,80,0.2);    color: #c62828; }
+
+  /* Prompt display in the narrative */
+  .prompt-display {
+    background: #fff;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 0.8rem 1.2rem;
+    font-family: 'Inter', monospace;
+    font-size: 1.1rem;
+    color: #222;
+    margin: 0.8rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .prompt-display .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.2em;
+    background: #1565c0;
+    animation: blink 1s step-end infinite;
+    vertical-align: middle;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  .prompt-word {
+    display: inline-block;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+
+  .prompt-word.original { background: rgba(100,181,246,0.15); color: #1565c0; }
+  .prompt-word.generated { background: rgba(102,187,106,0.15); color: #2e7d32; }
+
+  /* ---- Navigation ---- */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  /* ---- Progress dots ---- */
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active {
+    background: #222;
+    transform: scale(1.3);
+  }
+
+  .dot.visited {
+    background: #888;
+  }
+
+  /* ---- 3D canvas area ---- */
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+  }
+
+  #viz-panel canvas {
+    display: block;
+  }
+
+  /* ---- Slide transitions ---- */
+  #narrative-content {
+    transition: opacity 0.35s ease;
+  }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Left panel: narrative -->
+<div id="narrative-panel">
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Right panel: Three.js -->
+<div id="viz-panel"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ===================================================================
+   TOKEN DATA
+   =================================================================== */
+
+const TOKENS = [
+  { word: 'The',           color: 0x64b5f6, type: 'original' },
+  { word: 'best',          color: 0x64b5f6, type: 'original' },
+  { word: 'recipe',        color: 0x64b5f6, type: 'original' },
+  { word: 'for',           color: 0x64b5f6, type: 'original' },
+  { word: 'chicken',       color: 0x66bb6a, type: 'generated' },
+  { word: 'soup',          color: 0x66bb6a, type: 'generated' },
+  { word: 'is',            color: 0x66bb6a, type: 'generated' },
+  { word: "grandmother's", color: 0x66bb6a, type: 'generated' },
+  { word: 'classic',       color: 0x66bb6a, type: 'generated' },
+];
+
+// Probability candidates for each generation step
+const CANDIDATES = [
+  ['chicken', 'pasta', 'chocolate', 'banana', 'mushroom'],
+  ['soup', 'curry', 'pie', 'salad', 'stew'],
+  ['is', 'requires', 'starts', 'involves', 'needs'],
+  ["grandmother's", 'a', 'the', 'my', 'this'],
+  ['classic', 'secret', 'famous', 'simple', 'beloved'],
+];
+
+const CANDIDATE_PROBS = [
+  [0.35, 0.22, 0.18, 0.14, 0.11],
+  [0.31, 0.25, 0.19, 0.14, 0.11],
+  [0.40, 0.20, 0.16, 0.13, 0.11],
+  [0.28, 0.24, 0.21, 0.15, 0.12],
+  [0.33, 0.23, 0.18, 0.15, 0.11],
+];
+
+// Path through 3D space for token positions — gentle curve
+function tokenPosition(index) {
+  const spacing = 2.2;
+  const angle = index * 0.35;
+  const radius = 3.5 + index * 0.4;
+  return new THREE.Vector3(
+    Math.cos(angle) * radius - 2,
+    Math.sin(angle * 0.7) * 1.5 + (index - 4) * 0.3,
+    Math.sin(angle) * radius * 0.5
+  );
+}
+
+/* ===================================================================
+   STAGE DEFINITIONS
+   =================================================================== */
+
+function promptHTML(count, showCursor) {
+  let html = '<div class="prompt-display">';
+  for (let i = 0; i < count; i++) {
+    const cls = TOKENS[i].type === 'original' ? 'original' : 'generated';
+    html += `<span class="prompt-word ${cls}">${TOKENS[i].word}</span>`;
+  }
+  if (showCursor) html += '<span class="cursor"></span>';
+  html += '</div>';
+  return html;
+}
+
+const STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'You type a prompt',
+    body: `<p>It starts with your words. You type a sentence fragment into the model:</p>
+           ${promptHTML(4, true)}
+           <p>These four words are your <span class="word-tag word-prompt">prompt</span> &mdash; the starting signal. The model reads them, processes them, and prepares to continue your thought.</p>
+           <p>On the right, watch each word appear as a glowing sphere, forming a path through space. This path is your input &mdash; the foundation for everything that follows.</p>`,
+    visibleTokens: 4,
+    showCloud: false,
+    cloudStep: -1,
+    camera: { x: 5, y: 3, z: 14 },
+    target: { x: 0, y: 0, z: 0 },
+    autoRotate: false,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'The model predicts ONE word',
+    body: `<p>Given those four words, the model computes a <span class="word-tag word-cloud">probability distribution</span> over its entire vocabulary. Thousands of possible next words, each with a score.</p>
+           ${promptHTML(5, false)}
+           <p>In the cloud of candidates, <span class="word-tag word-selected">chicken</span> emerges as the winner &mdash; the highest-probability next token. It locks into place, extending the path.</p>
+           <p>The sentence is now five words long. One word generated. One decision made.</p>`,
+    visibleTokens: 5,
+    showCloud: true,
+    cloudStep: 0,
+    camera: { x: 6, y: 2, z: 12 },
+    target: { x: 1, y: 0, z: 0 },
+    autoRotate: false,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Then it predicts again',
+    body: `<p>Here is the key insight: the <span class="word-tag word-loop">entire sequence</span> &mdash; all five words including the one just generated &mdash; becomes the new input. The model feeds everything back in.</p>
+           ${promptHTML(6, false)}
+           <p>A new probability cloud forms at the end. This time, <span class="word-tag word-selected">soup</span> wins. The path extends further through space.</p>
+           <p>Each prediction is conditioned on <em>everything before it</em> &mdash; both your original prompt and all previously generated words.</p>`,
+    visibleTokens: 6,
+    showCloud: true,
+    cloudStep: 1,
+    camera: { x: 4, y: 4, z: 13 },
+    target: { x: 0, y: 1, z: 0 },
+    autoRotate: false,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'And again, and again...',
+    body: `<p>The process repeats. Each step: read everything so far, compute probabilities, pick the best word, extend the sequence.</p>
+           ${promptHTML(9, false)}
+           <p><span class="word-tag word-selected">is</span>, <span class="word-tag word-selected">grandmother's</span>, <span class="word-tag word-selected">classic</span> &mdash; each one selected from a cloud of candidates, each one added to the growing path.</p>
+           <p>Watch the trail grow through 3D space like a vine &mdash; each new node branching from where the last prediction ended.</p>`,
+    visibleTokens: 9,
+    showCloud: false,
+    cloudStep: -1,
+    camera: { x: 2, y: 5, z: 16 },
+    target: { x: 0, y: 1, z: 0 },
+    autoRotate: true,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Autoregressive generation',
+    body: `<p>This is <span class="word-tag word-auto">autoregressive generation</span>. The model generates one token at a time, each prediction informed by everything that came before.</p>
+           <p>It's not "thinking ahead" &mdash; it's making the best local choice at each step, and somehow, coherent text emerges.</p>
+           <p>Every chatbot response, every AI-written paragraph, every code completion &mdash; they all work this way. One word at a time, hundreds of times per second, each choice shaping the next.</p>
+           <p>The path you see is the trace of those decisions through probability space &mdash; a single thread pulled from an ocean of possibilities.</p>`,
+    visibleTokens: 9,
+    showCloud: false,
+    cloudStep: -1,
+    camera: { x: -4, y: 6, z: 15 },
+    target: { x: 0, y: 1, z: 0 },
+    autoRotate: true,
+  },
+];
+
+/* ===================================================================
+   THREE.JS SETUP
+   =================================================================== */
+
+const vizPanel = document.getElementById('viz-panel');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(vizPanel.clientWidth, vizPanel.clientHeight);
+renderer.setClearColor(0x0a0a0f, 1);
+vizPanel.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0a0f, 0.018);
+
+const camera3D = new THREE.PerspectiveCamera(50, vizPanel.clientWidth / vizPanel.clientHeight, 0.1, 200);
+camera3D.position.set(5, 3, 14);
+
+const controls = new OrbitControls(camera3D, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 6;
+controls.maxDistance = 40;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0.4;
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(10, 15, 10);
+scene.add(dirLight);
+const pointLight = new THREE.PointLight(0x4466ff, 0.4, 50);
+pointLight.position.set(-5, 5, 5);
+scene.add(pointLight);
+
+// Subtle grid
+const gridHelper = new THREE.GridHelper(24, 24, 0x222233, 0x151520);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.3;
+scene.add(gridHelper);
+
+/* ===================================================================
+   HELPERS
+   =================================================================== */
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function makeTextSprite(text, hexColor, fontSize) {
+  fontSize = fontSize || 28;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  ctx.font = `bold ${fontSize}px Inter, Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(text);
+  const pw = metrics.width + 20;
+  const ph = 36;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.8)';
+  roundRect(ctx, px, py, pw, ph, 8);
+  ctx.fill();
+
+  const c = new THREE.Color(hexColor);
+  ctx.fillStyle = `rgb(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)})`;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(3, 0.75, 1);
+  return sprite;
+}
+
+function makeProbSprite(text, prob, hexColor) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 64;
+
+  const displayText = `${text} ${(prob * 100).toFixed(0)}%`;
+  ctx.font = 'bold 22px Inter, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const metrics = ctx.measureText(displayText);
+  const pw = metrics.width + 16;
+  const ph = 30;
+  const px = (canvas.width - pw) / 2;
+  const py = (canvas.height - ph) / 2;
+  ctx.fillStyle = 'rgba(10,10,15,0.6)';
+  roundRect(ctx, px, py, pw, ph, 6);
+  ctx.fill();
+
+  const c = new THREE.Color(hexColor);
+  ctx.fillStyle = `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},0.9)`;
+  ctx.fillText(displayText, canvas.width / 2, canvas.height / 2 + 1);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(2.8, 0.7, 1);
+  return sprite;
+}
+
+/* ===================================================================
+   TOKEN SPHERES, LABELS, AND CONNECTIONS
+   =================================================================== */
+
+const tokenObjects = TOKENS.map((tok, i) => {
+  const pos = tokenPosition(i);
+
+  // Main sphere
+  const geo = new THREE.SphereGeometry(0.3, 32, 32);
+  const mat = new THREE.MeshStandardMaterial({
+    color: tok.color,
+    emissive: tok.color,
+    emissiveIntensity: 0.4,
+    roughness: 0.3,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(pos);
+  scene.add(mesh);
+
+  // Glow
+  const glowGeo = new THREE.SphereGeometry(0.5, 32, 32);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: tok.color,
+    transparent: true,
+    opacity: 0,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  mesh.add(glow);
+
+  // Label
+  const label = makeTextSprite(tok.word, tok.color);
+  label.position.set(pos.x, pos.y + 0.85, pos.z);
+  label.material.opacity = 0;
+  scene.add(label);
+
+  return { mesh, glow, label, targetOpacity: 0, pos };
+});
+
+// Connection lines between consecutive tokens
+const connectionLines = [];
+for (let i = 0; i < TOKENS.length - 1; i++) {
+  const p1 = tokenPosition(i);
+  const p2 = tokenPosition(i + 1);
+  const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+
+  const c1 = new THREE.Color(TOKENS[i].color);
+  const c2 = new THREE.Color(TOKENS[i + 1].color);
+  const midColor = c1.clone().lerp(c2, 0.5);
+
+  const mat = new THREE.LineBasicMaterial({
+    color: midColor,
+    transparent: true,
+    opacity: 0,
+  });
+  const line = new THREE.Line(geo, mat);
+  scene.add(line);
+  connectionLines.push({ line, afterIndex: i + 1, targetOpacity: 0 });
+}
+
+/* ===================================================================
+   PROBABILITY CLOUD
+   =================================================================== */
+
+const cloudGroup = new THREE.Group();
+scene.add(cloudGroup);
+
+let cloudObjects = [];
+let cloudTargetOpacity = 0;
+let currentCloudStep = -1;
+
+function buildCloud(stepIndex) {
+  // Clean up old cloud
+  cloudObjects.forEach(co => {
+    cloudGroup.remove(co.sphere);
+    cloudGroup.remove(co.label);
+  });
+  cloudObjects = [];
+
+  if (stepIndex < 0) return;
+
+  const anchorIndex = 4 + stepIndex; // token index where the cloud appears
+  const anchorPos = tokenPosition(anchorIndex);
+  const candidates = CANDIDATES[stepIndex];
+  const probs = CANDIDATE_PROBS[stepIndex];
+
+  candidates.forEach((word, i) => {
+    const isWinner = i === 0;
+    const angle = (i / candidates.length) * Math.PI * 2 - Math.PI / 2;
+    const radius = isWinner ? 0 : 1.2 + (1 - probs[i]) * 1.5;
+    const yOff = isWinner ? 0 : Math.sin(angle) * 0.8;
+    const xOff = isWinner ? 0 : Math.cos(angle) * radius * 0.7;
+    const zOff = isWinner ? 0 : Math.sin(angle + 1) * radius * 0.5;
+
+    const sphereSize = 0.12 + probs[i] * 0.25;
+    const color = isWinner ? 0x66bb6a : 0xab47bc;
+
+    const geo = new THREE.SphereGeometry(sphereSize, 24, 24);
+    const mat = new THREE.MeshStandardMaterial({
+      color: color,
+      emissive: color,
+      emissiveIntensity: isWinner ? 0.6 : 0.3,
+      roughness: 0.3,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0,
+    });
+    const sphere = new THREE.Mesh(geo, mat);
+    sphere.position.set(
+      anchorPos.x + xOff,
+      anchorPos.y + yOff + (isWinner ? 0 : 0.5),
+      anchorPos.z + zOff
+    );
+    cloudGroup.add(sphere);
+
+    const label = makeProbSprite(word, probs[i], isWinner ? 0x66bb6a : 0xce93d8);
+    label.position.set(
+      sphere.position.x,
+      sphere.position.y + 0.55,
+      sphere.position.z
+    );
+    label.material.opacity = 0;
+    cloudGroup.add(label);
+
+    cloudObjects.push({
+      sphere, label, isWinner,
+      basePos: sphere.position.clone(),
+      floatOffset: Math.random() * Math.PI * 2,
+    });
+  });
+}
+
+/* ===================================================================
+   FEEDBACK LOOP ARROWS (Stage 3)
+   =================================================================== */
+
+const loopGroup = new THREE.Group();
+scene.add(loopGroup);
+let loopArrows = [];
+let loopTargetOpacity = 0;
+
+function buildLoopArrows(tokenCount) {
+  loopArrows.forEach(a => loopGroup.remove(a));
+  loopArrows = [];
+
+  // Curved arrow from the last visible token back around to the first
+  const points = [];
+  const startPos = tokenPosition(tokenCount - 1);
+  const endPos = tokenPosition(0);
+  const midY = Math.max(startPos.y, endPos.y) + 3;
+  const midX = (startPos.x + endPos.x) / 2;
+  const midZ = (startPos.z + endPos.z) / 2 - 2;
+
+  const curve = new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(startPos.x, startPos.y + 0.6, startPos.z),
+    new THREE.Vector3(midX, midY, midZ),
+    new THREE.Vector3(endPos.x, endPos.y + 0.6, endPos.z)
+  );
+
+  const curvePoints = curve.getPoints(40);
+  const geo = new THREE.BufferGeometry().setFromPoints(curvePoints);
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xffb74d,
+    transparent: true,
+    opacity: 0,
+  });
+  const line = new THREE.Line(geo, mat);
+  loopGroup.add(line);
+  loopArrows.push(line);
+
+  // Arrowhead at the end
+  const coneGeo = new THREE.ConeGeometry(0.15, 0.5, 8);
+  const coneMat = new THREE.MeshBasicMaterial({
+    color: 0xffb74d,
+    transparent: true,
+    opacity: 0,
+  });
+  const cone = new THREE.Mesh(coneGeo, coneMat);
+  // Point towards the start token
+  const tangent = curve.getTangent(1);
+  cone.position.copy(curvePoints[curvePoints.length - 1]);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent.normalize());
+  loopGroup.add(cone);
+  loopArrows.push(cone);
+}
+
+/* ===================================================================
+   PULSE RING EFFECT
+   =================================================================== */
+
+const pulseRings = [];
+
+function createPulseRing(position, color) {
+  const geo = new THREE.RingGeometry(0.4, 0.5, 32);
+  const mat = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const ring = new THREE.Mesh(geo, mat);
+  ring.position.copy(position);
+  ring.lookAt(camera3D.position);
+  scene.add(ring);
+  pulseRings.push({ ring, life: 1.0 });
+}
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+let currentStage = 0;
+
+const narrativeContent = document.getElementById('narrative-content');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const progressContainer = document.getElementById('progress');
+
+// Build progress dots
+STAGES.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToStage(i));
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  const s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(() => {
+    narrativeContent.innerHTML = `
+      <div class="stage-label">${s.label}</div>
+      <h2 class="stage-title">${s.title}</h2>
+      <div class="stage-body">${s.body}</div>
+    `;
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  const dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  btnNext.disabled = stageIdx === STAGES.length - 1;
+  btnNext.innerHTML = stageIdx === STAGES.length - 1
+    ? 'Done'
+    : 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+}
+
+/* ===================================================================
+   ANIMATION STATE
+   =================================================================== */
+
+const animState = {
+  cameraTarget: new THREE.Vector3(5, 3, 14),
+  controlsTarget: new THREE.Vector3(0, 0, 0),
+  autoRotate: false,
+};
+
+function setTargetsForStage(stageIdx) {
+  const s = STAGES[stageIdx];
+
+  // Token visibility
+  tokenObjects.forEach((to, i) => {
+    to.targetOpacity = i < s.visibleTokens ? 1 : 0;
+  });
+
+  // Connection line visibility
+  connectionLines.forEach((cl) => {
+    cl.targetOpacity = cl.afterIndex < s.visibleTokens ? 0.4 : 0;
+  });
+
+  // Probability cloud
+  if (s.showCloud && s.cloudStep !== currentCloudStep) {
+    currentCloudStep = s.cloudStep;
+    buildCloud(s.cloudStep);
+  } else if (!s.showCloud && currentCloudStep !== -1) {
+    currentCloudStep = -1;
+    buildCloud(-1);
+  }
+  cloudTargetOpacity = s.showCloud ? 1 : 0;
+
+  // Loop arrows for stage 3
+  if (stageIdx === 2) {
+    buildLoopArrows(s.visibleTokens);
+    loopTargetOpacity = 0.5;
+  } else {
+    loopTargetOpacity = 0;
+  }
+
+  // Camera
+  animState.cameraTarget.set(s.camera.x, s.camera.y, s.camera.z);
+  animState.controlsTarget.set(s.target.x, s.target.y, s.target.z);
+  animState.autoRotate = !!s.autoRotate;
+
+  // Pulse rings for newly visible tokens
+  if (stageIdx > 0) {
+    const prevVisible = STAGES[stageIdx - 1].visibleTokens;
+    for (let i = prevVisible; i < s.visibleTokens; i++) {
+      createPulseRing(tokenPosition(i), TOKENS[i].color);
+    }
+  }
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+setTargetsForStage(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   STAGE 4 SEQUENTIAL ANIMATION
+   =================================================================== */
+
+let stage4AnimActive = false;
+let stage4Step = 0;
+let stage4Timer = 0;
+const STAGE4_STEP_DURATION = 1.2;
+
+function startStage4Anim() {
+  stage4AnimActive = true;
+  stage4Step = 0;
+  stage4Timer = 0;
+  // Start with only 6 tokens visible (from stage 3)
+  for (let i = 6; i < 9; i++) {
+    tokenObjects[i].targetOpacity = 0;
+    if (i > 0) {
+      const cl = connectionLines[i - 1];
+      if (cl) cl.targetOpacity = 0;
+    }
+  }
+}
+
+function updateStage4Anim(dt) {
+  if (!stage4AnimActive || currentStage !== 3) {
+    stage4AnimActive = false;
+    return;
+  }
+
+  stage4Timer += dt;
+  const newStep = Math.floor(stage4Timer / STAGE4_STEP_DURATION);
+
+  if (newStep > stage4Step && stage4Step < 3) {
+    stage4Step = Math.min(newStep, 3);
+    const tokenIdx = 5 + stage4Step; // tokens 6, 7, 8
+    if (tokenIdx < 9) {
+      tokenObjects[tokenIdx].targetOpacity = 1;
+      if (tokenIdx > 0) {
+        const cl = connectionLines[tokenIdx - 1];
+        if (cl) cl.targetOpacity = 0.4;
+      }
+      createPulseRing(tokenPosition(tokenIdx), TOKENS[tokenIdx].color);
+    }
+  }
+
+  if (stage4Step >= 3) {
+    stage4AnimActive = false;
+  }
+}
+
+// Override goToStage to trigger stage 4 animation
+const originalGoToStage = goToStage;
+window._goToStage = function(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+
+  const prevStage = currentStage;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+
+  if (idx === 3) {
+    startStage4Anim();
+  }
+};
+
+// Re-bind
+function goToStageWrapper(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+
+  const prevStage = currentStage;
+  currentStage = idx;
+  setTargetsForStage(idx);
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+
+  if (idx === 3) {
+    startStage4Anim();
+  }
+}
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', () => goToStageWrapper(currentStage + 1));
+btnPrev.addEventListener('click', () => goToStageWrapper(currentStage - 1));
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStageWrapper(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStageWrapper(currentStage - 1);
+  }
+});
+
+// Dots use goToStageWrapper
+progressContainer.querySelectorAll('.dot').forEach((dot, i) => {
+  dot.onclick = () => goToStageWrapper(i);
+});
+
+window.addEventListener('resize', () => {
+  const w = vizPanel.clientWidth;
+  const h = vizPanel.clientHeight;
+  camera3D.aspect = w / h;
+  camera3D.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+/* ===================================================================
+   RENDER LOOP
+   =================================================================== */
+
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.getElapsedTime();
+  const lerpSpeed = 2.5 * dt;
+
+  // Stage 4 sequential animation
+  updateStage4Anim(dt);
+
+  // Lerp token sphere opacity and positions
+  tokenObjects.forEach((to, i) => {
+    const targetOp = to.targetOpacity;
+    to.mesh.material.opacity += (targetOp - to.mesh.material.opacity) * lerpSpeed * 2;
+    to.glow.material.opacity = to.mesh.material.opacity * 0.15;
+    to.label.material.opacity += (targetOp - to.label.material.opacity) * lerpSpeed * 2;
+
+    // Subtle float
+    const floatY = Math.sin(t * 1.0 + i * 1.7) * 0.04;
+    const floatX = Math.cos(t * 0.7 + i * 2.1) * 0.02;
+    to.mesh.position.set(
+      to.pos.x + floatX,
+      to.pos.y + floatY,
+      to.pos.z
+    );
+    to.label.position.set(
+      to.mesh.position.x,
+      to.mesh.position.y + 0.85,
+      to.mesh.position.z
+    );
+
+    // Pulse glow for active (recently added) tokens
+    if (to.targetOpacity > 0) {
+      to.glow.material.opacity = 0.08 + Math.sin(t * 2 + i * 1.3) * 0.04;
+    }
+  });
+
+  // Lerp connection line opacity
+  connectionLines.forEach((cl) => {
+    cl.line.material.opacity += (cl.targetOpacity - cl.line.material.opacity) * lerpSpeed * 2;
+  });
+
+  // Probability cloud animation
+  cloudObjects.forEach((co) => {
+    const targetOp = cloudTargetOpacity * (co.isWinner ? 1 : 0.7);
+    co.sphere.material.opacity += (targetOp - co.sphere.material.opacity) * lerpSpeed * 2;
+    co.label.material.opacity += (targetOp - co.label.material.opacity) * lerpSpeed * 2;
+
+    // Candidates drift/orbit gently
+    if (!co.isWinner) {
+      const drift = Math.sin(t * 0.8 + co.floatOffset) * 0.15;
+      const driftZ = Math.cos(t * 0.6 + co.floatOffset * 1.3) * 0.1;
+      co.sphere.position.set(
+        co.basePos.x + drift,
+        co.basePos.y + Math.sin(t * 1.2 + co.floatOffset) * 0.1,
+        co.basePos.z + driftZ
+      );
+      co.label.position.set(
+        co.sphere.position.x,
+        co.sphere.position.y + 0.55,
+        co.sphere.position.z
+      );
+    } else {
+      // Winner pulses
+      const pulse = 1 + Math.sin(t * 3) * 0.1;
+      co.sphere.scale.setScalar(pulse);
+    }
+  });
+
+  // Loop arrows
+  loopArrows.forEach(a => {
+    a.material.opacity += (loopTargetOpacity - a.material.opacity) * lerpSpeed * 2;
+  });
+
+  // Pulse rings
+  for (let i = pulseRings.length - 1; i >= 0; i--) {
+    const pr = pulseRings[i];
+    pr.life -= dt * 0.8;
+    if (pr.life <= 0) {
+      scene.remove(pr.ring);
+      pulseRings.splice(i, 1);
+    } else {
+      const scale = 1 + (1 - pr.life) * 3;
+      pr.ring.scale.setScalar(scale);
+      pr.ring.material.opacity = pr.life * 0.4;
+      pr.ring.lookAt(camera3D.position);
+    }
+  }
+
+  // Lerp camera
+  camera3D.position.lerp(animState.cameraTarget, lerpSpeed * 0.6);
+  controls.target.lerp(animState.controlsTarget, lerpSpeed * 0.6);
+  controls.autoRotate = animState.autoRotate;
+
+  // Grid subtle rotation
+  gridHelper.rotation.y = t * 0.015;
+
+  controls.update();
+  renderer.render(scene, camera3D);
+}
+
+animate();
+
+</script>
+</body>
+</html>
