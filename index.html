@@ -260,7 +260,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
    =================================================================== */
 
 const WORDS = [
-  { name: 'Chicken',  animal: 8, food: 9, abs: 1, color: 0xffb74d, cssClass: 'word-chicken' },
+  { name: 'Chicken',  animal: 8, food: 9, abs: 3, color: 0xffb74d, cssClass: 'word-chicken' },
   { name: 'Salmon',   animal: 7, food: 8, abs: 1, color: 0xef5350, cssClass: 'word-salmon' },
   { name: 'Dog',      animal: 9, food: 2, abs: 1, color: 0x42a5f5, cssClass: 'word-dog' },
   { name: 'Freedom',  animal: 1, food: 1, abs: 9, color: 0xab47bc, cssClass: 'word-freedom' },
@@ -308,10 +308,9 @@ function tag(word) {
 
 const STAGES = [
   {
-    label: 'Stage 1 of 7',
+    label: 'Stage 1 of 6',
     title: 'What is a Large Language Model?',
-    body: `<p>It's a mathematical model that expresses relationships between words.</p>
-           <p>If we understand how words relate to each other, we can answer questions, generate text, and reason about language.</p>
+    body: `<p>A large language model captures the relationships between words and concepts. This is what lets it answer questions, complete sentences, and generate text.</p>
            <p>But how do models <strong>understand meaning</strong>?</p>`,
     getPositions: () => SCATTERED_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
     camera: { x: 0, y: 2, z: 28 },
@@ -320,9 +319,10 @@ const STAGES = [
     showAmbient: true,
   },
   {
-    label: 'Stage 2 of 7',
-    title: 'Turning words into numbers',
-    body: `<p>If we turn words into numbers, we can start to do mathematics with them -- calculate how similar they are, find relationships, measure meaning.</p>`,
+    label: 'Stage 2 of 6',
+    title: 'Five words',
+    body: `<p>Here are five words: ${WORDS.map(w => tag(w)).join(', ')}.</p>
+           <p>What are the relationships between them? How do we build a model for this?</p>`,
     getPositions: () => CLUSTER_POS.map(p => ({ x: p.x, y: p.y, z: p.z })),
     camera: { x: 0, y: 1, z: 20 },
     target: { x: 0, y: 0, z: 0 },
@@ -330,27 +330,11 @@ const STAGES = [
     showAmbient: false,
   },
   {
-    label: 'Stage 3 of 7',
-    title: 'Five words',
-    body: `<p>Here are five words: ${WORDS.map(w => tag(w)).join(', ')}.</p>
-           <p>Right now there's no mathematical relationship between them. They could be in any order.</p>
-           <p>Where do we go from here?</p>`,
-    getPositions: () => WORDS.map((w, i) => ({
-      x: JUMBLED_X[i] - 4.5,
-      y: 0,
-      z: 0,
-    })),
-    camera: { x: 0, y: 0, z: 18 },
-    target: { x: 0, y: 0, z: 0 },
-    showAxes: [],
-  },
-  {
-    label: 'Stage 4 of 7',
+    label: 'Stage 3 of 6',
     title: "How 'Animal' is it?",
-    body: `<p>Let's create a dimension -- something we score each word on. Our first: how strongly each word relates to <strong>animals</strong>.</p>
-           <p>${tag(WORDS[2])} scores highest -- it's the most animal-like word. ${tag(WORDS[0])} and ${tag(WORDS[1])} are close behind -- they're animals too, even if we also eat them.</p>
-           <p>${tag(WORDS[3])} and ${tag(WORDS[4])} score low -- neither has much to do with animals.</p>
-           <p>Already, a pattern emerges: the <em>animal words</em> cluster to the right.</p>`,
+    body: `<p>Let's start by scoring each word on a single quality. For example, how <strong>animal</strong> is each word?</p>
+           <p>${tag(WORDS[2])}, ${tag(WORDS[0])} and ${tag(WORDS[1])} all score high on the animal scale. ${tag(WORDS[3])} doesn't seem to have much to do with animals, and a ${tag(WORDS[4])} might have a little.</p>
+           <p>But we can start to see that some words are related. We've created a <em>dimension</em> - on to the second.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
       y: 0,
@@ -361,12 +345,11 @@ const STAGES = [
     showAxes: ['animal'],
   },
   {
-    label: 'Stage 5 of 7',
+    label: 'Stage 4 of 6',
     title: "How 'Food' is it?",
     body: `<p>Now we add a second dimension: how strongly each word relates to <strong>food</strong>.</p>
-           <p>${tag(WORDS[0])} and ${tag(WORDS[1])} rise high -- both are common foods. ${tag(WORDS[4])} also rises -- a cookbook is all about food.</p>
-           <p>${tag(WORDS[2])} drops low on the food axis -- dogs aren't food (usually). And ${tag(WORDS[3])} stays at the bottom.</p>
-           <p>Notice how ${tag(WORDS[0])} and ${tag(WORDS[4])} are now near each other -- both score high on food, though for different reasons.</p>`,
+           <p>${tag(WORDS[0])} and ${tag(WORDS[1])} rise high - both are common foods. ${tag(WORDS[4])} also rises - a cookbook is all about food.</p>
+           <p>${tag(WORDS[2])} drops lower on the food axis. ${tag(WORDS[0])} and ${tag(WORDS[4])} are now closer to each other - at least on the food dimension.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
       y: w.food - 5,
@@ -377,13 +360,13 @@ const STAGES = [
     showAxes: ['animal', 'food'],
   },
   {
-    label: 'Stage 6 of 7',
+    label: 'Stage 5 of 6',
     title: "How 'Abstract' is it?",
-    body: `<p>The third dimension captures <strong>abstractness</strong> -- is the word a concrete, physical thing, or an abstract concept?</p>
-           <p>${tag(WORDS[3])} leaps forward -- it's the only truly abstract word here. ${tag(WORDS[4])} moves slightly -- it's a physical object but represents knowledge.</p>
-           <p>The rest -- ${tag(WORDS[0])}, ${tag(WORDS[1])}, ${tag(WORDS[2])} -- stay near the back. They're all concrete, tangible things.</p>
+    body: `<p>The third dimension captures <strong>abstractness</strong> - is the word a concrete, physical thing, or an abstract concept?</p>
+           <p>${tag(WORDS[3])} leaps forward - it's the most abstract word here. ${tag(WORDS[1])} and ${tag(WORDS[2])} stay near the back - they're concrete things.</p>
+           <p>${tag(WORDS[0])} is also somewhat abstract - we call someone 'chicken' when they're afraid.</p>
            <p>${tag(WORDS[3])} is now clearly <em>separated</em> from every other word. Three dimensions reveal what one could not.</p>
-           <p>How do we pick these dimensions? Essentially we just guess, do some mathematics to see how good the guess was, then try again. This is what <strong>training</strong> is -- we'll talk about that later.</p>`,
+           <p>How do we pick these dimensions? Essentially we just guess, do some mathematics to see how good the guess was, then try again. This is what <strong>training</strong> is - we'll talk about that later.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
       y: w.food - 5,
@@ -394,11 +377,11 @@ const STAGES = [
     showAxes: ['animal', 'food', 'abstractness'],
   },
   {
-    label: 'Stage 7 of 7',
+    label: 'Stage 6 of 6',
     title: 'More dimensions, richer meaning',
-    body: `<p>Real language models use <strong>thousands of dimensions</strong> -- not just three. Models like Claude use many thousands. Each dimension captures a different facet of meaning: sentiment, formality, temporality, and countless others.</p>
-           <p>This is the foundational idea behind a large language model -- creating a conceptual space that relates words to each other based on meaning.</p>
-           <p>And real models don't use whole words -- they use <em>tokens</em>, pieces of words. How we build these dimensions and work with the words, we'll come to next.</p>
+    body: `<p>Real language models use <strong>thousands of dimensions</strong> - not just three. Models like Claude use many thousands. Each dimension captures a different facet of meaning: sentiment, formality, temporality, and countless others.</p>
+           <p>This is the foundational idea behind a large language model - creating a conceptual space that relates words to each other based on meaning.</p>
+           <p>And real models don't use whole words - they use <em>tokens</em>, pieces of words. How we build these dimensions and work with the words, we'll come to next.</p>
            <p><strong>More chapters coming soon.</strong> For updates, check my <a href="https://dwmkerr.substack.com" target="_blank" style="color: #1565c0;">weekly digest on Substack</a>.</p>`,
     getPositions: () => WORDS.map(w => ({
       x: w.animal - 5,
@@ -756,7 +739,7 @@ function setTargetsForStage(stageIdx) {
   });
 
   animState.showConnections = !!s.showConnections;
-  animState.autoRotate = stageIdx >= 5;
+  animState.autoRotate = stageIdx >= 4;
   animState.showAmbient = !!s.showAmbient;
 }
 
