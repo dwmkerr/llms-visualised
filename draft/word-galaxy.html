@@ -31,11 +31,11 @@
   #sentence{font-family:var(--mono);font-size:17px;text-align:center;line-height:2.6}
   #sentence .w{
     display:inline-block;padding:4px 10px;margin:0 2px;border-radius:7px;
-    border:1px solid var(--faint);background:rgba(255,255,255,.55);color:var(--muted);
+    border:1px solid var(--faint);background:#fffdf9;color:var(--muted);
     transition:color .25s,background .25s,border-color .25s,box-shadow .25s;
   }
   #sentence .w.active{
-    color:var(--ink);border-color:var(--accent);background:rgba(26,127,55,.10);
+    color:var(--ink);border-color:var(--accent);background:#e8f0e6;
     box-shadow:0 0 0 3px rgba(26,127,55,.10);
   }
   #sentence .w.done{color:var(--ink)}
@@ -162,7 +162,7 @@
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3 2.5h2v11H3z"/><path d="M13 2.5v11L6.2 8z"/></svg>
       </button>
       <button id="backBtn" class="tbtn" type="button" aria-label="Step back" disabled>
-        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M11.5 2.5v11L4.7 8z"/></svg>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3 5.5 8l5 5"/></svg>
       </button>
       <div id="dots"></div>
       <button id="playBtn" class="tbtn" type="button" aria-label="Play">
@@ -170,7 +170,7 @@
         <svg class="ic-pause" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 3h2.8v10H4z"/><path d="M9.2 3H12v10H9.2z"/></svg>
       </button>
       <button id="stepBtn" class="tbtn" type="button" aria-label="Step forward">
-        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 2.5v11L11.3 8z"/></svg>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3l5 5-5 5"/></svg>
       </button>
     </div>
   </div>
