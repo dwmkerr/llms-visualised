@@ -102,8 +102,8 @@
   .tbtn:active:not(:disabled){transform:scale(.88)}
   .tbtn:disabled{opacity:.35;cursor:default}
   .tbtn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
-  /* play is the hero control: a touch larger, morphing play/pause glyph */
-  #playBtn{width:40px;height:40px}
+  /* play is the hero control: second from left like a video player, a touch larger, morphing play/pause glyph */
+  #playBtn{width:40px;height:40px;margin:0 4px}
   #playBtn svg{width:15px;height:15px}
   #playBtn .ic-pause{display:none}
   #playBtn.playing .ic-play{display:none}
@@ -137,7 +137,7 @@
 <main>
   <header>
     <h1>How context picks a meaning</h1>
-    <p>The word "free" could mean liberty or no cost. Attention to earlier words settles it.</p>
+    <p>The word "interest" could mean curiosity or a charge on money. Attention to earlier words settles it.</p>
   </header>
 
   <section>
@@ -161,14 +161,14 @@
       <button id="startBtn" class="tbtn" type="button" aria-label="Back to start" disabled>
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3 2.5h2v11H3z"/><path d="M13 2.5v11L6.2 8z"/></svg>
       </button>
-      <button id="backBtn" class="tbtn" type="button" aria-label="Step back" disabled>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3 5.5 8l5 5"/></svg>
-      </button>
-      <div id="dots"></div>
       <button id="playBtn" class="tbtn" type="button" aria-label="Play">
         <svg class="ic-play" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 2.8l8.4 5.2L5 13.2z"/></svg>
         <svg class="ic-pause" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 3h2.8v10H4z"/><path d="M9.2 3H12v10H9.2z"/></svg>
       </button>
+      <button id="backBtn" class="tbtn" type="button" aria-label="Step back" disabled>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3 5.5 8l5 5"/></svg>
+      </button>
+      <div id="dots"></div>
       <button id="stepBtn" class="tbtn" type="button" aria-label="Step forward">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3l5 5-5 5"/></svg>
       </button>
@@ -189,54 +189,44 @@
 'use strict';
 
 /* ---------- data ---------- */
-var INPUT  = ['The','prisoner','was','finally','set','free'];
-var OUTPUT = ['after','ten','years','inside.'];
+var INPUT  = ['The','loan','came','with','a'];
+var OUTPUT = ['low','rate','of','interest'];
 var WORDS  = INPUT.concat(OUTPUT);
 var TOTAL  = WORDS.length;
-
 /* attention weights, backwards only, illustrative */
 var ATT = {
-  1:{0:0.45},
-  2:{1:0.70, 0:0.20},
-  3:{2:0.55, 1:0.35},
-  4:{3:0.45, 1:0.50, 2:0.20},
-  5:{4:0.85, 1:0.90, 0:0.15},
-  6:{5:0.80, 1:0.40},
-  7:{6:0.60, 3:0.30},
-  8:{7:0.85, 6:0.30},
-  9:{1:0.70, 5:0.50}
+  1:{0:0.40},
+  2:{1:0.70, 0:0.15},
+  3:{2:0.60, 1:0.30},
+  4:{3:0.50},
+  5:{1:0.45, 4:0.30, 3:0.20},
+  6:{5:0.70, 1:0.60},
+  7:{6:0.60},
+  8:{1:0.90, 6:0.85, 5:0.40, 7:0.30}    /* the money shot: loan and rate decide the sense */
 };
-
 /* every input and generated word owns a small semantic region */
 var CLUSTERS = [
-  {key:'function',    words:['the','a','an','of','to','and','that','it']},
-  {key:'confinement', words:['prison','cell','jail','inmate','warden','bars','captive','guard']},
-  {key:'being',       words:['was','is','were','be','been','being','became','seems']},
-  {key:'atlast',      words:['finally','at last','eventually','soon','awaited','overdue','in the end','long-awaited']},
-  {key:'setverbs',    words:['set','placed','put','released','loosed','laid','cast','let']},
-  {key:'liberty',     words:['freedom','release','escape','liberty','parole','unchained','liberated','pardon']},
-  {key:'price',       words:['gratis','$0','no-cost','discount','bargain','complimentary','freebie','refund']},
-  {key:'sequence',    words:['after','before','then','next','following','later','once','afterward']},
-  {key:'numbers',     words:['ten','10','dozen','nine','eleven','twelve','count','twenty']},
-  {key:'timespan',    words:['years','decade','months','weeks','days','lifetime','seasons','era']},
-  {key:'interior',    words:['inside','within','indoors','interior','walls','enclosed','inner','confines']}
+  {key:'function',  words:['the','a','an','of','to','and','that','with']},
+  {key:'lending',   words:['loan','borrow','lender','mortgage','credit','repay','debt','advance']},
+  {key:'arrival',   words:['came','arrived','reached','appeared','brought','went','turned up','showed']},
+  {key:'degree',    words:['low','small','modest','slight','reduced','lower','minimal','cheap']},
+  {key:'measure',   words:['rate','ratio','percent','level','pace','figure','yield','scale']},
+  {key:'money',     words:['interest','yield','return','APR','dividend','earnings','charge','payment']},
+  {key:'curiosity', words:['curious','fascinated','intrigued','attention','hobby','passion','keen','wondering']}
 ];
 var NCL = CLUSTERS.length;
-
 /* per-step cluster lighting: clusterIndex -> strength */
 var STEP_SEM = [
-  {0:0.70},
+  {0:0.60},
   {1:0.95},
-  {2:0.70},
-  {3:0.90, 9:0.25},
-  {4:0.80, 5:0.25},
-  {5:1.00, 6:0.18},   /* the money shot: liberty strong, price faint */
-  {7:0.85},
-  {8:0.90},
-  {9:0.95},
-  {10:0.90, 1:0.30}
+  {2:0.75},
+  {0:0.45},
+  {0:0.40},
+  {3:0.85},
+  {4:0.90, 5:0.25},
+  {0:0.40},
+  {5:1.00, 6:0.18}    /* the money shot: money strong, curiosity faint */
 ];
-
 var GENERIC = ('river window music carry green above answer morning paper stone quiet garden before letter '+
   'mountain sleep water father summer machine bright follow table orange winter simple between dream engine '+
   'yellow market station pencil silver corner middle little travel listen sister wonder evening basket circle '+
@@ -284,7 +274,8 @@ var dotEls = WORDS.map(function(w,i){
 });
 
 /* ---------- step engine ---------- */
-var DURS = WORDS.map(function(_,i){ return i===5?2600:1600; });
+var MONEY_SHOT = WORDS.indexOf('interest');
+var DURS = WORDS.map(function(_,i){ return i===MONEY_SHOT?2600:1600; });
 var GAP = 320;
 var cur=-1, t=0, phase='idle', autoplay=false, paused=false, done=false;
 var lastFinished=-1;
@@ -340,9 +331,11 @@ function addChip(i,flash){
 }
 
 function beginStep(i){
-  cur=i; t=0; phase='run'; flags.chip=false;
+  cur=i; t=0; phase='run';
   if(i>=INPUT.length && !outSpans[i-INPUT.length]) spawnOut(i);
   markActive(i);
+  /* the word joins the context as part of the same beat as its highlight, not a trailing step */
+  addChip(i,true); flags.chip=true;
   fireWeights();
   if(GLX) GLX.kick();
   updateScrubber();
@@ -508,9 +501,11 @@ playBtn.addEventListener('click', function(){
 stepBtn.addEventListener('click', function(){
   if(reduced){ instantStep(); renderStaticFor(cur); return; }
   if(done && phase==='idle' && cur===TOTAL-1) return;
-  autoplay=false;
-  if(phase==='run'){ paused=false; t=DURS[cur]; }
-  else { paused=false; beginStep(cur+1); }
+  autoplay=false; paused=false;
+  /* one press is always one word: a step still animating is settled first, then the next begins */
+  if(phase==='run') finishStep();
+  if(cur<TOTAL-1) beginStep(cur+1);
+  else phase='idle';
   updateButtons();
 });
 
@@ -582,7 +577,6 @@ function update(dt){
   if(phase==='run'){
     t+=dt;
     var pr=t/DURS[cur];
-    if(pr>=0.55 && !flags.chip){ addChip(cur,true); flags.chip=true; }
     if(pr>=1){
       finishStep();
       if(autoplay && cur<TOTAL-1){ phase='gap'; t=0; }
