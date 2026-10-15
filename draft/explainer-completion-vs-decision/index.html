@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-WFTE4NBDQ1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-WFTE4NBDQ1');
+</script>
+<link rel="icon" type="image/png" href="../../favicon.png">
+<title>One answer at a time, or all at once</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 4.5rem 2.5rem 3rem;
+    overflow-y: auto;
+  }
+
+  /* auto margins centre a short stage; with justify-content centred instead,
+     a long stage would overflow both ends and clip under the branding */
+  .stage-inner { margin: auto 0; }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+
+  .hl {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .hl-prose   { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .hl-typed   { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .hl-verdict { background: rgba(102,187,106,0.2); color: #2e7d32; }
+  .hl-coda    { background: rgba(239,83,80,0.2);   color: #c62828; }
+
+  /* Branding */
+  .branding {
+    position: absolute;
+    top: 1rem;
+    left: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    z-index: 20;
+  }
+
+  .branding-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .branding-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #666;
+    letter-spacing: 0.04em;
+  }
+
+  .branding-title {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #999;
+    letter-spacing: 0.02em;
+  }
+
+  .branding-section {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #999;
+    letter-spacing: 0.02em;
+  }
+
+  .branding-section a { color: #999; text-decoration: none; }
+  .branding-section a:hover { color: #666; }
+  .branding-section .current { color: #666; }
+
+  .branding-links {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .branding-links a {
+    display: flex;
+    color: #888;
+    transition: color 0.2s;
+  }
+
+  .branding-links a:hover { color: #555; }
+
+  .branding-links svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+  }
+
+  /* Navigation */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active { background: #222; transform: scale(1.3); }
+  .dot.visited { background: #888; }
+
+  #narrative-content { transition: opacity 0.35s ease; }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ===================================================================
+     VIZ PANEL: the diagram, re-themed for dark
+     =================================================================== */
+  :root{
+    --bg:#0a0a0f; --card:#15151c; --border:#2a2a35;
+    --ink:#eee; --muted:#888; --faint:#555; --ghost:#3a3a46;
+    --blue:#42a5f5; --green:#66bb6a; --red:#ef5350;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  }
+
+  #viz-panel {
+    flex: 1;
+    position: relative;
+    height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* auto margins centre the stage when it fits and let the panel scroll
+     when it does not, which justify-content:center would clip */
+  #viz-inner {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 20px;
+  }
+  #stage {
+    margin: auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  #diagram{position:relative;width:min(840px,100%)}
+
+  .card{
+    position:relative;z-index:1;
+    border:1px solid var(--border);border-radius:14px;background:var(--card);
+    box-shadow:0 1px 2px rgba(0,0,0,.3),0 10px 34px rgba(0,0,0,.25);
+    transition:border-color .4s ease,box-shadow .4s ease;
+  }
+
+  /* one grid so each row (input, model, output, counter) lines up across
+     both sides and the two inputs are directly comparable */
+  #cols{
+    display:grid;grid-template-columns:1fr 1fr;
+    column-gap:22px;row-gap:10px;align-items:stretch;
+  }
+
+  .inputcard{padding:10px 12px 11px}
+  .inputcard .ilbl{
+    font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:0.14em;
+    margin-bottom:7px;
+  }
+  #inL .ilbl{color:#aaa}
+  #inR .ilbl{color:var(--blue)}
+  .irows{font-family:var(--mono);font-size:8.5px;line-height:1.6;color:var(--ink)}
+  /* negative margin + equal padding keeps text position fixed, so the hover
+     tint never shifts layout */
+  .irow{
+    white-space:pre-wrap;word-break:break-word;border-radius:4px;
+    margin:0 -5px;padding:0 5px;
+    transition:background .12s ease,opacity .12s ease;
+  }
+  .g{color:var(--faint)}
+  .gn{color:#4a4a58;font-style:italic}
+  .nm{color:var(--green);font-weight:650}
+  .irow.hl{background:rgba(66,165,245,.14)}
+  #diagram.rowdim .irow:not(.hl){opacity:.5}
+  /* at full two-column width every row fits one line, so the paired rows
+     share a uniform height; narrower layouts fall back to wrapping */
+  #viz-panel.wide .irow{white-space:pre;overflow:hidden;text-overflow:ellipsis}
+
+  .modelbox{padding:11px 15px 12px}
+  .modelbox .title{
+    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:0.16em;
+    color:var(--ink);text-align:center;transition:color .4s ease;
+  }
+  .modelbox .subtitle{
+    font-family:var(--mono);font-size:9.5px;color:var(--muted);
+    text-align:center;margin-top:2px;margin-bottom:8px;
+  }
+  .weights{display:block;width:100%;height:54px}
+  /* stage 2 draws the eye to the two model boxes */
+  #diagram.emph .modelbox{
+    border-color:rgba(66,165,245,.7);
+    box-shadow:0 0 0 1px rgba(66,165,245,.25),0 0 28px rgba(66,165,245,.18);
+  }
+  #diagram.emph .modelbox .title{color:var(--blue)}
+
+  .ocard{
+    padding:11px 13px;min-height:132px;
+    font-family:var(--mono);font-size:11.5px;line-height:1.75;
+    will-change:transform;
+  }
+  .ocard .flash{
+    position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:rgba(66,165,245,.22);opacity:0;
+  }
+  .ghost{color:var(--ghost)}
+  .block{min-height:21px;word-break:break-all}
+  .block.coda{word-break:normal;color:var(--red)}
+  .v{color:var(--green);font-weight:650}
+  #caret{
+    display:inline-block;width:7px;height:14px;margin-left:1px;
+    background:var(--ink);vertical-align:-2px;
+  }
+
+  #rjson{display:none}
+  #rjson .jline{color:var(--muted)}
+  .jrow{white-space:pre;word-break:normal}
+  /* probability as a proportion box: the faint outline spans exactly the four
+     digit characters and stands for 100%; the fill behind the digits spans p
+     of it, so the equal-width boxes align and read as comparable proportions.
+     Negative margin offsets border + padding so the digits never shift */
+  .pwrap{
+    position:relative;z-index:0;display:inline-block;line-height:1.3;
+    padding:0 1px;margin:0 -2px;
+    border:1px solid rgba(102,187,106,.45);border-radius:4px;
+  }
+  .pbar{
+    position:absolute;left:0;top:0;bottom:0;width:0;z-index:-1;
+    background:rgba(102,187,106,.2);border-radius:3px;pointer-events:none;
+  }
+
+  .counter{
+    font-family:var(--mono);font-size:10px;color:var(--muted);
+    text-align:center;line-height:1.6;min-height:17px;
+  }
+  .counter b{color:var(--ink);font-weight:650}
+
+  #cap{
+    margin-top:16px;text-align:center;font-size:12.5px;color:var(--muted);
+    max-width:560px;margin-left:auto;margin-right:auto;line-height:1.6;
+    opacity:0;transform:translateY(6px);
+  }
+  #cap code{font-family:var(--mono);font-size:11px;color:var(--ink)}
+  #cap .ok{color:var(--green)}
+
+  /* transport bar, inverted so it reads on dark */
+  #transport{
+    display:flex;align-items:center;gap:7px;
+    background:var(--card);border:1px solid var(--border);border-radius:999px;
+    padding:7px 10px;
+    box-shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25);
+  }
+  .tbtn{
+    width:34px;height:34px;border-radius:50%;border:none;padding:0;
+    background:#eaeaea;color:#0a0a0f;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;
+    transition:background .15s,transform .12s,opacity .15s;
+  }
+  .tbtn svg{width:13px;height:13px;display:block}
+  .tbtn:hover:not(:disabled){background:#cfcfcf}
+  .tbtn:active:not(:disabled){transform:scale(.88)}
+  .tbtn:disabled{opacity:.3;cursor:default}
+  .tbtn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  #playBtn{width:40px;height:40px}
+  #playBtn svg{width:15px;height:15px}
+  #playBtn .ic-pause{display:none}
+  #playBtn.playing .ic-play{display:none}
+  #playBtn.playing .ic-pause{display:block}
+  #dots{display:flex;gap:7px;align-items:center;padding:0 9px}
+  .sdot{
+    width:8px;height:8px;border-radius:50%;border:none;padding:0;
+    background:#3a3a48;cursor:pointer;transition:background .2s,transform .2s;
+  }
+  .sdot:hover{background:#777}
+  .sdot.cur{background:#eaeaea;transform:scale(1.3)}
+
+  /* the panel, not the viewport, decides when the columns stack */
+  #viz-panel.stacked #cols{display:flex;flex-direction:column;gap:12px}
+  #viz-panel.stacked #inL{order:1}
+  #viz-panel.stacked #boxL{order:2}
+  #viz-panel.stacked #ocardL{order:3}
+  #viz-panel.stacked #cntL{order:4}
+  #viz-panel.stacked #inR{order:5}
+  #viz-panel.stacked #boxR{order:6}
+  #viz-panel.stacked #ocardR{order:7}
+  #viz-panel.stacked #cntR{order:8}
+  #viz-panel.stacked #inR{margin-top:10px}
+
+  @media (prefers-reduced-motion: reduce){
+    #viz-panel *{animation:none !important;transition:none !important}
+  }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #viz-inner { padding: 16px 16px 20px; }
+    #narrative-content { padding: 5rem 1.5rem 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+    .branding { left: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div class="branding">
+    <div class="branding-row">
+      <a href="https://dwmkerr.com" target="_blank" rel="noopener" class="branding-name" style="text-decoration: none; color: inherit;">dwmkerr</a>
+      <div class="branding-links">
+      <a href="https://linkedin.com/in/dwmkerr" target="_blank" rel="noopener" title="LinkedIn">
+        <svg viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+      </a>
+      <a href="https://github.com/dwmkerr/llms-visualised" target="_blank" rel="noopener" title="GitHub">
+        <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      </a>
+      <a href="https://dwmkerr.substack.com" target="_blank" rel="noopener" title="Substack">
+        <svg viewBox="0 0 24 24"><path d="M22.539 8.242H1.46V5.406h21.08v2.836zM1.46 10.812V24L12 18.11 22.54 24V10.812H1.46zM22.54 0H1.46v2.836h21.08V0z"/></svg>
+      </a>
+    </div>
+    </div>
+    <a href="https://github.com/dwmkerr/llms-visualised" target="_blank" rel="noopener" class="branding-title" style="text-decoration: none; color: inherit;">LLMs Visualised</a>
+    <div class="branding-section"><a href="../../index.html">Chapters</a> &middot; <span class="current">Explainers</span></div>
+  </div>
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel">
+  <div id="viz-inner">
+  <div id="stage">
+  <div id="diagram">
+    <div id="cols">
+      <section class="inputcard card" id="inL">
+        <div class="ilbl">INPUT &middot; PROSE PROMPT</div>
+        <div class="irows" id="rowsL">
+          <div class="irow" data-r="0" aria-hidden="true">&nbsp;</div>
+          <div class="irow hv" data-r="1"><span class="g">Today's scam patterns: </span>safe account calls<span class="g">; </span>private car sales...</div>
+          <div class="irow hv" data-r="2"><span class="g">Flagged payees: </span><span class="nm">QuickCoin Ltd</span><span class="g">, </span>J. Marku<span class="g">.</span></div>
+          <div class="irow hv" data-r="3"><span class="g">Rank each transaction as </span>safe<span class="g">, </span>low<span class="g"> or </span>high<span class="g"> risk.</span></div>
+          <div class="irow hv" data-r="4"><span class="g">Reply ONLY with JSON: {"txn_1": {"choice": ...}, ...}</span></div>
+          <div class="irow hv" data-r="5"><span class="g">1. </span>&pound;14,900<span class="g"> to "</span><span class="nm">Quick Coin Limited</span><span class="g">", </span>new payee<span class="g">, </span>23:40<span class="g">...</span></div>
+          <div class="irow hv" data-r="6"><span class="g">2. </span>&pound;42<span class="g"> to "</span>Tesco<span class="g">", </span>regular payee<span class="g">, "</span>weekly shop<span class="g">"</span></div>
+          <div class="irow hv" data-r="7"><span class="g">3. </span>&pound;880 refund<span class="g"> from "</span>GymFlex<span class="g">", </span>known payee</div>
+          <div class="irow" data-r="8" aria-hidden="true">&nbsp;</div>
+        </div>
+      </section>
+      <section class="inputcard card" id="inR">
+        <div class="ilbl">INPUT &middot; TYPED REQUEST</div>
+        <div class="irows" id="rowsR">
+          <div class="irow" data-r="0"><span class="g">{ "state": {</span></div>
+          <div class="irow hv" data-r="1"><span class="g">    "scam_patterns": ["</span>safe account calls<span class="g">", "</span>private car sales...<span class="g">"],</span></div>
+          <div class="irow hv" data-r="2"><span class="g">    "flagged_payees": ["</span><span class="nm">QuickCoin Ltd</span><span class="g">", "</span>J. Marku<span class="g">"] },</span></div>
+          <div class="irow hv" data-r="3"><span class="g">  "questions": { "type": "choice", "criteria": ["</span>safe<span class="g">","</span>low<span class="g">","</span>high<span class="g">"],</span></div>
+          <div class="irow hv" data-r="4"><span class="gn">    (not needed: output is typed)</span></div>
+          <div class="irow hv" data-r="5"><span class="g">    "txn_1": { "instructions": "</span>&pound;14,900<span class="g"> to '</span><span class="nm">Quick Coin Limited</span><span class="g">'..." },</span></div>
+          <div class="irow hv" data-r="6"><span class="g">    "txn_2": { "instructions": "</span>&pound;42<span class="g"> to '</span>Tesco<span class="g">', </span>regular payee<span class="g">..." },</span></div>
+          <div class="irow hv" data-r="7"><span class="g">    "txn_3": { "instructions": "</span>&pound;880 refund<span class="g">, '</span>GymFlex<span class="g">', </span>known payee<span class="g">" }</span></div>
+          <div class="irow" data-r="8"><span class="g">} }</span></div>
+        </div>
+      </section>
+
+      <section class="modelbox card" id="boxL">
+        <div class="title">COMPLETION MODEL</div>
+        <div class="subtitle">a large language model</div>
+        <canvas class="weights" id="weightsL"></canvas>
+      </section>
+      <section class="modelbox card" id="boxR">
+        <div class="title">DECISION MODEL</div>
+        <div class="subtitle">e.g. Jev, a System 1 model</div>
+        <canvas class="weights" id="weightsR"></canvas>
+      </section>
+
+      <section class="ocard card" id="ocardL">
+        <span class="ghost" id="ghostL">...</span>
+        <div class="block"><span class="btxt" id="b0"></span></div>
+        <div class="block"><span class="btxt" id="b1"></span></div>
+        <div class="block"><span class="btxt" id="b2"></span></div>
+        <div class="block coda"><span class="btxt" id="b3"></span></div>
+      </section>
+      <section class="ocard card" id="ocardR">
+        <div class="flash" id="flashR"></div>
+        <span class="ghost" id="ghostR">...</span>
+        <div id="rjson"></div>
+      </section>
+
+      <div class="counter" id="cntL">passes: 0 &middot; output tokens: 0</div>
+      <div class="counter" id="cntR">passes: 0 &middot; output tokens: 0</div>
+    </div>
+
+    <p id="cap">Both catch <code>Quick Coin Limited</code>: a fuzzy match to yesterday's flagged <code>QuickCoin Ltd</code>. <span class="ok">The difference is not the judgement, it is how it is delivered.</span></p>
+  </div>
+
+  <div id="transport" role="group" aria-label="Playback controls">
+    <button id="startBtn" class="tbtn" type="button" aria-label="Back to start" disabled>
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3 2.5h2v11H3z"/><path d="M13 2.5v11L6.2 8z"/></svg>
+    </button>
+    <button id="playBtn" class="tbtn" type="button" aria-label="Play">
+      <svg class="ic-play" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 2.8l8.4 5.2L5 13.2z"/></svg>
+      <svg class="ic-pause" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 3h2.8v10H4z"/><path d="M9.2 3H12v10H9.2z"/></svg>
+    </button>
+    <div id="dots"></div>
+    <button id="stepBtn" class="tbtn" type="button" aria-label="Step forward">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3l5 5-5 5"/></svg>
+    </button>
+  </div>
+  </div>
+  </div>
+</div>
+
+<script>
+/* ===================================================================
+   DIAGRAM ENGINE
+   Deterministic timeline: everything renders from a master time t, so
+   playing, scrubbing and jumping all produce exactly the same frames.
+   =================================================================== */
+var explainer = (function(){
+'use strict';
+
+function srand(n){ var x=Math.sin(n*127.1+311.7)*43758.5453; return x-Math.floor(x); }
+function clamp(u){ return u<0?0:u>1?1:u; }
+function easeOut(u){ u=clamp(u); return 1-Math.pow(1-u,3); }
+
+/* both inputs are always on the page; the run starts almost immediately */
+var RUN_START=160;
+var LEFT_TEXTS=[
+  '{"txn_1": {"choice": "high"}}',
+  '{"txn_2": {"choice": "safe"}}',
+  '{"txn_3": {"choice": "safe"}}'
+];
+var VERDICTS=['high','safe','safe'];
+/* the completion model is conversational, so after the JSON it drifts out of
+   the requested format and keeps talking */
+var CODA='Not all of these are safe - and not for the reason you might expect. Would you like me to explain more?';
+var GAP=560;
+
+/* per-character times with jitter, precomputed so scrubbing is exact */
+var charTimes=[], blockStart=[], blockEnd=[];
+var cursor=RUN_START+80;
+LEFT_TEXTS.forEach(function(txt,b){
+  blockStart[b]=cursor;
+  var arr=[];
+  for(var i=0;i<txt.length;i++){
+    cursor+=22+srand(b*977+i*31)*34;
+    arr.push(cursor);
+  }
+  charTimes.push(arr);
+  blockEnd[b]=cursor;
+  cursor+=GAP;
+});
+/* the coda continues the final call, so it follows the last JSON block after
+   a short beat rather than a full call gap */
+cursor=blockEnd[2]+300;
+blockStart[3]=cursor;
+(function(){
+  var arr=[];
+  for(var i=0;i<CODA.length;i++){
+    cursor+=22+srand(3*977+i*31)*34;
+    arr.push(cursor);
+  }
+  charTimes.push(arr);
+  blockEnd[3]=cursor;
+})();
+var ALLTEXTS=LEFT_TEXTS.concat([CODA]);
+var NBLOCKS=ALLTEXTS.length;
+var TOTALCH=ALLTEXTS.join('').length;
+var LEFT_END=blockEnd[3];
+
+var SPARK_START=RUN_START, STAMP_T=RUN_START+520;
+var CAPTION_T=LEFT_END+300;
+var END=CAPTION_T+550;
+var CHECKPOINTS=[blockEnd[0]+150, blockEnd[1]+150, blockEnd[2]+150, END];
+var CHECKNAMES=['Call 1 answered, decision model already done','Call 2 answered','Call 3 answered','Finished'];
+
+var ROWS=[
+  {pre:'  "txn_1": {"choice": ', v:'"high"', mid:', "p": ', pstr:'0.80', post:'},', p:0.80},
+  {pre:'  "txn_2": {"choice": ', v:'"safe"', mid:', "p": ', pstr:'0.93', post:'},', p:0.93},
+  {pre:'  "txn_3": {"choice": ', v:'"safe"', mid:', "p": ', pstr:'0.88', post:'}',  p:0.88}
+];
+
+/* ---------- DOM ---------- */
+var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var vizPanel=document.getElementById('viz-panel');
+var diagram=document.getElementById('diagram');
+var ghostL=document.getElementById('ghostL'), ghostR=document.getElementById('ghostR');
+var ocardR=document.getElementById('ocardR');
+var flashR=document.getElementById('flashR');
+var rjson=document.getElementById('rjson');
+var cntL=document.getElementById('cntL'), cntR=document.getElementById('cntR');
+var capEl=document.getElementById('cap');
+var playBtn=document.getElementById('playBtn');
+var startBtn=document.getElementById('startBtn');
+var stepBtn=document.getElementById('stepBtn');
+var dotsEl=document.getElementById('dots');
+var btxt=[document.getElementById('b0'),document.getElementById('b1'),
+          document.getElementById('b2'),document.getElementById('b3')];
+var blockFinalHTML=ALLTEXTS.map(function(t,b){
+  if(b>=VERDICTS.length) return t;
+  return t.replace('"'+VERDICTS[b]+'"','<span class="v">"'+VERDICTS[b]+'"</span>');
+});
+var blockShown=['','','',''];
+
+var caret=document.createElement('span');
+caret.id='caret';
+
+/* right output rows built once; the bar behind each probability animated by width */
+var barEls=[];
+(function buildRight(){
+  var head=document.createElement('div');
+  head.className='jline'; head.textContent='{"answers": {';
+  rjson.appendChild(head);
+  ROWS.forEach(function(r){
+    var row=document.createElement('div'); row.className='jrow';
+    row.appendChild(document.createTextNode(r.pre));
+    var vt=document.createElement('span'); vt.className='v'; vt.textContent=r.v;
+    row.appendChild(vt);
+    row.appendChild(document.createTextNode(r.mid));
+    var pw=document.createElement('span'); pw.className='pwrap';
+    pw.title='probability '+r.pstr;
+    var bar=document.createElement('i'); bar.className='pbar';
+    pw.appendChild(bar);
+    pw.appendChild(document.createTextNode(r.pstr));
+    row.appendChild(pw);
+    row.appendChild(document.createTextNode(r.post));
+    rjson.appendChild(row);
+    barEls.push(bar);
+  });
+  var tail=document.createElement('div');
+  tail.className='jline'; tail.textContent='}}';
+  rjson.appendChild(tail);
+})();
+
+var dotEls=CHECKPOINTS.map(function(cp,i){
+  var d=document.createElement('button');
+  d.className='sdot'; d.type='button';
+  d.setAttribute('aria-label','Jump to: '+CHECKNAMES[i]);
+  d.addEventListener('click',function(){
+    master=cp; playing=false; stopAt=END; updatePlay();
+    if(reduced) renderAt(master,0);
+  });
+  dotsEl.appendChild(d);
+  return d;
+});
+
+/* ---------- weights dot matrix ---------- */
+function makeWeights(canvas){
+  var ctx=canvas.getContext('2d');
+  var cells=[], w=0, h=0;
+  function size(){
+    var dpr=Math.min(2,window.devicePixelRatio||1);
+    var r=canvas.getBoundingClientRect();
+    w=r.width; h=r.height;
+    canvas.width=Math.round(w*dpr); canvas.height=Math.round(h*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    var cols=Math.max(10,Math.floor(w/13)), rows=4;
+    cells=[];
+    var gx=w/cols, gy=h/rows;
+    for(var ry=0;ry<rows;ry++)
+      for(var cx=0;cx<cols;cx++)
+        cells.push({x:gx*(cx+0.5), y:gy*(ry+0.5), ph:srand(ry*131+cx*17)*6.283});
+  }
+  /* env 0..1 drives how much of the matrix sparkles; slot re-rolls the lit
+     subset so sustained activity reads as fresh passes, not a frozen glow */
+  function draw(env,slot,wall){
+    ctx.clearRect(0,0,w,h);
+    for(var i=0;i<cells.length;i++){
+      var c=cells[i], inten=0;
+      if(env>0.02 && srand(slot*131+i*7)<0.10+0.14*env){
+        var tw=0.5+0.34*Math.sin(wall*0.0062+c.ph*5.1)
+                  +0.16*Math.sin(wall*0.0027+c.ph*2.3);
+        inten=env*Math.max(0.15,tw);
+      }
+      var a=Math.min(0.97,0.18+0.8*inten);
+      ctx.fillStyle='rgba(66,165,245,'+a.toFixed(3)+')';
+      ctx.beginPath();
+      ctx.arc(c.x,c.y,1.8+1.9*inten,0,6.2832);
+      ctx.fill();
+    }
+  }
+  return {size:size, draw:draw};
+}
+var WL=makeWeights(document.getElementById('weightsL'));
+var WR=makeWeights(document.getElementById('weightsR'));
+
+/* ---------- state helpers ---------- */
+function charsTyped(t){
+  var n=0;
+  for(var b=0;b<NBLOCKS;b++){
+    var arr=charTimes[b];
+    for(var i=0;i<arr.length;i++) if(arr[i]<=t) n++;
+  }
+  return n;
+}
+function recentChars(t){
+  var n=0;
+  for(var b=0;b<NBLOCKS;b++){
+    var arr=charTimes[b];
+    for(var i=0;i<arr.length;i++) if(arr[i]<=t&&arr[i]>t-260) n++;
+  }
+  return n;
+}
+function lastCharTime(t){
+  var last=-1e9;
+  for(var b=0;b<NBLOCKS;b++){
+    var arr=charTimes[b];
+    for(var i=0;i<arr.length;i++) if(arr[i]<=t&&arr[i]>last) last=arr[i];
+  }
+  return last;
+}
+function caretBlock(t){
+  if(t<RUN_START) return -1;
+  if(t>=LEFT_END+240) return -1;
+  for(var b=0;b<NBLOCKS;b++) if(t<blockEnd[b]) return b;
+  return NBLOCKS-1;
+}
+
+/* ---------- the one render function: full diagram state at time t ---------- */
+function renderAt(t,wall){
+  /* LEFT: typewriter with jitter; weights sparkle tracks typing activity */
+  for(var b=0;b<NBLOCKS;b++){
+    var want;
+    if(t>=blockEnd[b]) want='F';
+    else {
+      var n=0, arr=charTimes[b];
+      for(var i=0;i<arr.length;i++) if(arr[i]<=t) n++;
+      want='P'+n;
+    }
+    if(blockShown[b]!==want){
+      blockShown[b]=want;
+      if(want==='F') btxt[b].innerHTML=blockFinalHTML[b];
+      else btxt[b].textContent=ALLTEXTS[b].slice(0,+want.slice(1));
+    }
+  }
+  ghostL.style.display = t<RUN_START ? '' : 'none';
+  var cb=caretBlock(t);
+  if(cb<0){
+    if(caret.parentNode) caret.parentNode.removeChild(caret);
+  } else {
+    var host=btxt[cb].parentNode;
+    if(caret.parentNode!==host) host.appendChild(caret);
+    var typingNow=(t-lastCharTime(t))<140;
+    caret.style.opacity=(typingNow||((wall%940)<470))?'1':'0';
+  }
+  var actL=Math.min(1,recentChars(t)/5);
+  WL.draw(actL, Math.floor(t/210), wall);
+
+  /* RIGHT: one sparkle burst, then the whole answer stamps in */
+  var envR=0;
+  if(t>=SPARK_START&&t<STAMP_T){
+    envR=Math.sin(Math.PI*(t-SPARK_START)/(STAMP_T-SPARK_START));
+  }
+  WR.draw(envR, Math.floor(t/170), wall);
+  if(t>=STAMP_T){
+    var dt=t-STAMP_T;
+    ghostR.style.display='none';
+    rjson.style.display='block';
+    ocardR.style.transform='scale('+(1+0.035*Math.exp(-dt/110)).toFixed(4)+')';
+    flashR.style.opacity=(0.55*Math.exp(-dt/150)).toFixed(3);
+    for(var r=0;r<3;r++){
+      var u=easeOut((dt-70-r*110)/380);
+      barEls[r].style.width=(ROWS[r].p*100*u).toFixed(1)+'%';
+    }
+  } else {
+    ghostR.style.display='';
+    rjson.style.display='none';
+    ocardR.style.transform='';
+    flashR.style.opacity='0';
+    for(var r2=0;r2<3;r2++){
+      barEls[r2].style.width='0%';
+    }
+  }
+
+  /* counters tick up live */
+  var ch=charsTyped(t);
+  var passes=Math.min(190,Math.round(190*ch/TOTALCH));
+  cntL.innerHTML = passes>0
+    ? 'passes: <b>~'+passes+'</b> &middot; output tokens: <b>~'+passes+'</b>'
+    : 'passes: <b>0</b> &middot; output tokens: <b>0</b>';
+  cntR.innerHTML = t>=STAMP_T
+    ? 'passes: <b>1</b> &middot; output tokens: <b>0</b> (scores, not text)'
+    : 'passes: <b>0</b> &middot; output tokens: <b>0</b>';
+
+  /* shared payoff caption */
+  var cp=easeOut((t-CAPTION_T)/420);
+  capEl.style.opacity=cp.toFixed(2);
+  capEl.style.transform='translateY('+(6*(1-cp)).toFixed(1)+'px)';
+
+  /* transport state */
+  var cur=-1;
+  for(var d=0;d<CHECKPOINTS.length;d++) if(t>=CHECKPOINTS[d]-1) cur=d;
+  for(var d2=0;d2<dotEls.length;d2++) dotEls[d2].classList.toggle('cur', d2===cur);
+  startBtn.disabled = t<=0;
+  stepBtn.disabled = t>=END;
+}
+
+/* ---------- transport engine ---------- */
+var master=0, playing=false, stopAt=END;
+
+function updatePlay(){
+  playBtn.classList.toggle('playing', playing);
+  playBtn.setAttribute('aria-label', master>=END?'Replay':(playing?'Pause':'Play'));
+}
+
+playBtn.addEventListener('click', function(){
+  if(reduced){
+    master = master>=END ? 0 : END;
+    renderAt(master,0); updatePlay();
+    return;
+  }
+  if(master>=END){ master=0; playing=true; stopAt=END; }
+  else { playing=!playing; if(playing) stopAt=END; }
+  updatePlay();
+});
+
+stepBtn.addEventListener('click', function(){
+  var target=END;
+  for(var i=0;i<CHECKPOINTS.length;i++){
+    if(CHECKPOINTS[i]>master+1){ target=CHECKPOINTS[i]; break; }
+  }
+  if(reduced){ master=target; renderAt(master,0); updatePlay(); return; }
+  stopAt=target; playing=true; updatePlay();
+});
+
+startBtn.addEventListener('click', function(){
+  master=0; playing=false; stopAt=END; updatePlay();
+  if(reduced) renderAt(0,0);
+});
+
+/* ---------- paired input rows ---------- */
+var rowsL=document.getElementById('rowsL'), rowsR=document.getElementById('rowsR');
+
+/* fix each row pair's height to the taller twin so the two cards share
+   vertical bands; skipped when the columns are stacked */
+function pairRows(){
+  var L=rowsL.children, R=rowsR.children, i, h;
+  for(i=0;i<L.length;i++){ L[i].style.minHeight=''; R[i].style.minHeight=''; }
+  if(vizPanel.classList.contains('stacked')) return;
+  for(i=0;i<L.length;i++){
+    h=Math.max(L[i].getBoundingClientRect().height, R[i].getBoundingClientRect().height);
+    L[i].style.minHeight=h.toFixed(2)+'px';
+    R[i].style.minHeight=h.toFixed(2)+'px';
+  }
+}
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(relayout);
+
+(function hoverTwins(){
+  if(!window.matchMedia('(pointer: fine)').matches) return;
+  function twins(r){
+    return [rowsL.querySelector('[data-r="'+r+'"]'), rowsR.querySelector('[data-r="'+r+'"]')];
+  }
+  var rows=document.querySelectorAll('.irow.hv');
+  Array.prototype.forEach.call(rows, function(el){
+    var r=el.getAttribute('data-r');
+    el.addEventListener('mouseenter', function(){
+      twins(r).forEach(function(t){ if(t) t.classList.add('hl'); });
+      diagram.classList.add('rowdim');
+    });
+    el.addEventListener('mouseleave', function(){
+      twins(r).forEach(function(t){ if(t) t.classList.remove('hl'); });
+      diagram.classList.remove('rowdim');
+    });
+  });
+})();
+
+/* ---------- layout: the panel width, not the viewport, picks the layout ---------- */
+var STACK_BELOW=600, WIDE_FROM=820;
+function applyPanelClasses(){
+  var w=vizPanel.clientWidth;
+  vizPanel.classList.toggle('stacked', w<STACK_BELOW);
+  vizPanel.classList.toggle('wide', w>=WIDE_FROM);
+}
+function relayout(){
+  applyPanelClasses();
+  pairRows();
+  WL.size(); WR.size();
+  renderAt(master, 0);
+}
+if(window.ResizeObserver){
+  new ResizeObserver(function(){ relayout(); }).observe(vizPanel);
+} else {
+  window.addEventListener('resize', relayout);
+}
+relayout();
+
+if(!reduced){
+  var lastWall=performance.now();
+  (function frame(wall){
+    requestAnimationFrame(frame);
+    var dt=Math.min(50, wall-lastWall);
+    lastWall=wall;
+    if(playing){
+      master+=dt;
+      if(master>=stopAt){ master=stopAt; playing=false; updatePlay(); }
+      if(master>=END){ master=END; playing=false; updatePlay(); }
+    }
+    renderAt(master,wall);
+  })(lastWall);
+}
+
+/* ---------- API for the stage controller ---------- */
+function idle(){
+  master=0; playing=false; stopAt=END; updatePlay();
+  if(reduced) renderAt(master,0);
+}
+function finish(){
+  master=END; playing=false; stopAt=END; updatePlay();
+  if(reduced) renderAt(master,0);
+}
+function play(){
+  if(reduced){ finish(); return; }
+  master=0; playing=true; stopAt=END; updatePlay();
+}
+function emphasiseModels(on){
+  diagram.classList.toggle('emph', !!on);
+}
+return { idle:idle, finish:finish, play:play, emphasiseModels:emphasiseModels };
+})();
+
+/* ===================================================================
+   STAGES
+   =================================================================== */
+
+var STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'Same question, two packagings',
+    body: `<p>A bank wants a model to judge three transactions. The same facts are sent to two models, packaged two ways. On the left is a <strong>prose prompt</strong>: sentences with some JSON bolted on, which is what a completion model expects. On the right is a <strong>typed request</strong>: the same facts as named fields, with the questions and their allowed answers spelled out.</p>
+           <p>Look at the bright text. It is identical on both sides. The faint parts are packaging: prose glue on the left, braces and quotes on the right. Hover over a row and its twin lights up.</p>
+           <p>One row has no twin. <span class="hl hl-prose">Reply ONLY with JSON</span> is an instruction about the shape of the answer. The typed request does not need it, because the shape is part of the request. That one row is the real difference.</p>`,
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'Two kinds of model',
+    body: `<p>A <strong>completion model</strong> is a large language model. Give it text and it writes the text that should come next. Ask it a question and it answers by writing.</p>
+           <p>A <strong>decision model</strong> is built for typed questions. It reads the state, scores each question against its allowed answers, and returns the scores. It does not write anything.</p>
+           <p>Both can be trained on the same kind of data and hold the same kind of knowledge. Think of them as the same brain with a different mouth. What does that change when they are asked to work?</p>`,
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Press play',
+    body: `<p>Both models start at the same moment. The blue dots are the model's <strong>weights</strong> firing, and each burst is one pass through the whole network.</p>
+           <p>On the right, the weights fire once and every answer arrives together. Three questions are scored in a single pass. Then it waits.</p>
+           <p>On the left, every character of output is another full pass through the weights. The model writes one piece of text at a time, so the dots keep firing until the writing stops. Each transaction is a separate call, so there are three bursts of typing with a pause between them. The counters under each side keep score.</p>`,
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Same verdict, different delivery',
+    body: `<p>Both models flag the first transaction. <span class="hl hl-verdict">Quick Coin Limited</span> is a fuzzy match for the flagged payee QuickCoin Ltd. Both pass the other two as safe. The judgement is the same on both sides.</p>
+           <p>The difference is the delivery. The right side returned typed answers, each with a probability. The left side wrote text that looks like JSON, and then kept writing. The <span class="hl hl-coda">red line</span> is a prose coda: a completion model has no natural point at which to stop.</p>
+           <p>The counts are approximate and words stand in for tokens. Every output token costs a pass. The right side spent one pass and produced no text at all.</p>`,
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'Why it matters',
+    body: `<p>One pass, against one pass per output token. That gap grows with the length of the answer, and it is paid every time the question is asked.</p>
+           <p>Typed scores can be read straight into a system: compare a probability with a threshold and act. Text has to be parsed first, checked for the right shape, and stripped of anything the model added after the answer.</p>
+           <p>Neither model is wrong. A completion model asked for a decision is a capable model doing an unnatural job. Where the task is writing, use a model that writes. Where the same typed question is asked over and over, a decision model answers it directly.</p>
+           <p><strong>More chapters coming soon.</strong> For updates, check my <a href="https://dwmkerr.substack.com" target="_blank" style="color: #1565c0;">weekly digest on Substack</a>.</p>`,
+  },
+];
+
+/* Diagram state each stage holds. Stage 3 is the exception: entering it
+   forwards plays the timeline through, so it is handled in goToStage */
+function holdDiagram(idx){
+  if(idx<=1) explainer.idle(); else explainer.finish();
+  explainer.emphasiseModels(idx===1);
+}
+
+/* ===================================================================
+   STAGE MANAGEMENT
+   =================================================================== */
+
+var currentStage = 0;
+
+var narrativeContent = document.getElementById('narrative-content');
+var btnPrev = document.getElementById('btn-prev');
+var btnNext = document.getElementById('btn-next');
+var progressContainer = document.getElementById('progress');
+
+STAGES.forEach(function(_, i){
+  var dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', function(){ goToStage(i); });
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx) {
+  var s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(function(){
+    narrativeContent.innerHTML =
+      '<div class="stage-inner">' +
+      '<div class="stage-label">' + s.label + '</div>' +
+      '<h2 class="stage-title">' + s.title + '</h2>' +
+      '<div class="stage-body">' + s.body + '</div>' +
+      '</div>';
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx) {
+  var dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach(function(d, i){
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateButtons(stageIdx) {
+  btnPrev.disabled = stageIdx === 0;
+  if (stageIdx === STAGES.length - 1) {
+    btnNext.disabled = true;
+    btnNext.innerHTML = 'Coming Soon';
+  } else {
+    btnNext.disabled = false;
+    btnNext.innerHTML = 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+  }
+}
+
+function goToStage(idx) {
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  var forward = idx > currentStage;
+  currentStage = idx;
+  if (idx === 2 && forward) {
+    explainer.emphasiseModels(false);
+    explainer.play();
+  } else {
+    holdDiagram(idx);
+  }
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateButtons(idx);
+}
+
+// Initialize
+holdDiagram(0);
+updateNarrative(0);
+updateProgress(0);
+updateButtons(0);
+
+/* ===================================================================
+   EVENTS
+   =================================================================== */
+
+btnNext.addEventListener('click', function(){ goToStage(currentStage + 1); });
+btnPrev.addEventListener('click', function(){ goToStage(currentStage - 1); });
+
+document.addEventListener('keydown', function(e){
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+</script>
+</body>
+</html>
