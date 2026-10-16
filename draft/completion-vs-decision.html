@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>One answer at a time, or all at once</title>
+<title>LLMs vs Decision Models</title>
 <style>
   :root{
     --bg:#faf9f6; --ink:#24292f; --muted:#6e7681; --faint:#d8d5cd;
@@ -17,11 +17,11 @@
   main{
     position:relative;min-height:100vh;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:20px;padding:30px 16px;
+    gap:12px;padding:20px 16px;
   }
   header{text-align:center;max-width:640px}
-  header h1{font-size:22px;font-weight:650;letter-spacing:-0.01em}
-  header p{margin-top:6px;font-size:14px;color:var(--muted)}
+  header h1{font-size:22px;font-weight:650;letter-spacing:-0.01em;font-style:italic}
+  header p{margin-top:6px;font-size:14px;color:var(--muted);font-style:italic}
 
   /* diagram wrapper: two columns, rows aligned so the inputs sit side by side */
   #diagram{position:relative;width:min(920px,100%)}
@@ -40,12 +40,13 @@
   }
 
   .inputcard{padding:10px 13px 12px}
-  .inputcard .ilbl{
-    font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:0.14em;
-    margin-bottom:7px;
+  /* one title style for every card so inputs, models and outputs read as peers */
+  .ttl{
+    font-family:var(--sans);font-size:13px;font-weight:650;
+    color:var(--ink);text-align:center;line-height:1.4;
   }
-  #inL .ilbl{color:#5f5844}
-  #inR .ilbl{color:var(--blue)}
+  .inputcard .ttl{margin-bottom:7px}
+  .ocard .ttl{margin-bottom:6px}
   .irows{font-family:var(--mono);font-size:9.5px;line-height:1.6;color:var(--ink)}
   /* negative margin + equal padding keeps text position fixed, so the hover
      tint never shifts layout */
@@ -66,14 +67,7 @@
   }
 
   .modelbox{padding:11px 15px 12px}
-  .modelbox .title{
-    font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.16em;
-    color:var(--ink);text-align:center;
-  }
-  .modelbox .subtitle{
-    font-family:var(--mono);font-size:10px;color:var(--muted);
-    text-align:center;margin-top:2px;margin-bottom:8px;
-  }
+  .modelbox .ttl{margin-bottom:8px}
   .weights{display:block;width:100%;height:54px}
 
   .ocard{
@@ -117,13 +111,6 @@
   }
   .counter b{color:var(--ink);font-weight:650}
 
-  #cap{
-    margin-top:16px;text-align:center;font-size:12.5px;color:var(--muted);
-    max-width:560px;margin-left:auto;margin-right:auto;line-height:1.6;
-    opacity:0;transform:translateY(6px);
-  }
-  #cap code{font-family:var(--mono);font-size:11px;color:var(--ink)}
-  #cap .ok{color:var(--accent)}
 
   /* transport bar, word-galaxy style */
   #transport{
@@ -156,9 +143,6 @@
   .sdot:hover{background:var(--muted)}
   .sdot.cur{background:var(--ink);transform:scale(1.3)}
 
-  footer{font-size:12px;color:var(--muted);text-align:center;max-width:600px;line-height:1.6}
-  footer .keyb{color:var(--blue)}
-  footer .key{color:var(--accent)}
 
   @media (prefers-reduced-motion: reduce){
     *{animation:none !important;transition:none !important}
@@ -175,14 +159,14 @@
 <body>
 <main>
   <header>
-    <h1>One answer at a time, or all at once</h1>
-    <p>Two ways to get a judgement from a model. Same input, same question; what differs is how the answer comes out.</p>
+    <h1>LLMs vs Decision Models</h1>
+    <p>A high level visualisation of the differences between how a large-language-model and a decision model produce output.</p>
   </header>
 
   <div id="diagram">
     <div id="cols">
       <section class="inputcard card" id="inL">
-        <div class="ilbl">INPUT &middot; PROSE PROMPT</div>
+        <div class="ttl">Input (Prose)</div>
         <div class="irows" id="rowsL">
           <div class="irow" data-r="0" aria-hidden="true">&nbsp;</div>
           <div class="irow hv" data-r="1"><span class="g">Today's scam patterns: </span>safe account calls<span class="g">; </span>private car sales...</div>
@@ -196,7 +180,7 @@
         </div>
       </section>
       <section class="inputcard card" id="inR">
-        <div class="ilbl">INPUT &middot; TYPED REQUEST</div>
+        <div class="ttl">Input (JSON/Image)</div>
         <div class="irows" id="rowsR">
           <div class="irow" data-r="0"><span class="g">{ "state": {</span></div>
           <div class="irow hv" data-r="1"><span class="g">    "scam_patterns": ["</span>safe account calls<span class="g">", "</span>private car sales...<span class="g">"],</span></div>
@@ -211,17 +195,16 @@
       </section>
 
       <section class="modelbox card" id="boxL">
-        <div class="title">COMPLETION MODEL</div>
-        <div class="subtitle">a large language model</div>
+        <div class="ttl">LLM (e.g. ChatGPT)</div>
         <canvas class="weights" id="weightsL"></canvas>
       </section>
       <section class="modelbox card" id="boxR">
-        <div class="title">DECISION MODEL</div>
-        <div class="subtitle">e.g. Jev, a System 1 model</div>
+        <div class="ttl">Decision Model (e.g. Jev)</div>
         <canvas class="weights" id="weightsR"></canvas>
       </section>
 
       <section class="ocard card" id="ocardL">
+        <div class="ttl">Output</div>
         <span class="ghost" id="ghostL">...</span>
         <div class="block"><span class="btxt" id="b0"></span></div>
         <div class="block"><span class="btxt" id="b1"></span></div>
@@ -230,6 +213,7 @@
       </section>
       <section class="ocard card" id="ocardR">
         <div class="flash" id="flashR"></div>
+        <div class="ttl">Output</div>
         <span class="ghost" id="ghostR">...</span>
         <div id="rjson"></div>
       </section>
@@ -238,7 +222,6 @@
       <div class="counter" id="cntR">passes: 0 &middot; output tokens: 0</div>
     </div>
 
-    <p id="cap">Both catch <code>Quick Coin Limited</code>: a fuzzy match to yesterday's flagged <code>QuickCoin Ltd</code>. <span class="ok">The difference is not the judgement, it is how it is delivered.</span></p>
   </div>
 
   <div id="transport" role="group" aria-label="Playback controls">
@@ -255,13 +238,7 @@
     </button>
   </div>
 
-  <footer>
-    <span class="keyb">Blue dots</span> are the model's weights firing.
-    On the left every output character is another full pass through the weights, one call per question.
-    On the right one pass scores every question at once (fan-out), and the
-    <span class="key">verdicts</span> are read straight from typed outputs, no text generated.
-    Counts are approximate. Words stand in for tokens.
-  </footer>
+
 </main>
 
 <script>
@@ -336,7 +313,6 @@ var ocardR=document.getElementById('ocardR');
 var flashR=document.getElementById('flashR');
 var rjson=document.getElementById('rjson');
 var cntL=document.getElementById('cntL'), cntR=document.getElementById('cntR');
-var capEl=document.getElementById('cap');
 var playBtn=document.getElementById('playBtn');
 var startBtn=document.getElementById('startBtn');
 var stepBtn=document.getElementById('stepBtn');
@@ -529,10 +505,6 @@ function renderAt(t,wall){
     ? 'passes: <b>1</b> &middot; output tokens: <b>0</b> (scores, not text)'
     : 'passes: <b>0</b> &middot; output tokens: <b>0</b>';
 
-  /* shared payoff caption */
-  var cp=easeOut((t-CAPTION_T)/420);
-  capEl.style.opacity=cp.toFixed(2);
-  capEl.style.transform='translateY('+(6*(1-cp)).toFixed(1)+'px)';
 
   /* transport state */
   var cur=-1;
@@ -641,6 +613,33 @@ if(reduced){
   })(lastWall);
 }
 
+})();
+</script>
+<script>
+/* Report rendered height to the embedding page so the iframe can size itself.
+   Measure the content's true bottom edge rather than scrollHeight: the html
+   element fills the iframe viewport, so scrollHeight can only ever ratchet up. */
+(function(){
+  if(window.parent===window) return;
+  /* main's min-height:100vh tracks the iframe height and would feed back into
+     the measurement forever; drop it when embedded. */
+  var st=document.createElement('style');
+  st.textContent='main{min-height:0 !important}';
+  document.head.appendChild(st);
+  var last=0;
+  function post(){
+    var max=0, els=document.body.children;
+    for(var i=0;i<els.length;i++){
+      if(els[i].tagName==='SCRIPT') continue;
+      var b=els[i].getBoundingClientRect().bottom + window.scrollY;
+      if(b>max) max=b;
+    }
+    var h=Math.ceil(max)+24;
+    if(Math.abs(h-last)>4){ last=h; window.parent.postMessage({jevEmbed:true,h:h},'*'); }
+  }
+  window.addEventListener('load',post);
+  if(window.ResizeObserver) new ResizeObserver(post).observe(document.body);
+  setInterval(post,800);
 })();
 </script>
 </body>

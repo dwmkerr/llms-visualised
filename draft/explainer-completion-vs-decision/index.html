@@ -12,7 +12,7 @@
   gtag('config', 'G-WFTE4NBDQ1');
 </script>
 <link rel="icon" type="image/png" href="../../favicon.png">
-<title>One answer at a time, or all at once</title>
+<title>LLMs vs Decision Models</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -270,12 +270,13 @@
   }
 
   .inputcard{padding:10px 12px 11px}
-  .inputcard .ilbl{
-    font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:0.14em;
-    margin-bottom:7px;
+  /* one title style for every card so inputs, models and outputs read as peers */
+  .ttl{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:12px;font-weight:650;color:var(--ink);text-align:center;line-height:1.4;
   }
-  #inL .ilbl{color:#aaa}
-  #inR .ilbl{color:var(--blue)}
+  .inputcard .ttl{margin-bottom:7px}
+  .ocard .ttl{margin-bottom:6px}
   .irows{font-family:var(--mono);font-size:8.5px;line-height:1.6;color:var(--ink)}
   /* negative margin + equal padding keeps text position fixed, so the hover
      tint never shifts layout */
@@ -294,21 +295,14 @@
   #viz-panel.wide .irow{white-space:pre;overflow:hidden;text-overflow:ellipsis}
 
   .modelbox{padding:11px 15px 12px}
-  .modelbox .title{
-    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:0.16em;
-    color:var(--ink);text-align:center;transition:color .4s ease;
-  }
-  .modelbox .subtitle{
-    font-family:var(--mono);font-size:9.5px;color:var(--muted);
-    text-align:center;margin-top:2px;margin-bottom:8px;
-  }
+  .modelbox .ttl{margin-bottom:8px;transition:color .4s ease}
   .weights{display:block;width:100%;height:54px}
   /* stage 2 draws the eye to the two model boxes */
   #diagram.emph .modelbox{
     border-color:rgba(66,165,245,.7);
     box-shadow:0 0 0 1px rgba(66,165,245,.25),0 0 28px rgba(66,165,245,.18);
   }
-  #diagram.emph .modelbox .title{color:var(--blue)}
+  #diagram.emph .modelbox .ttl{color:var(--blue)}
 
   .ocard{
     padding:11px 13px;min-height:132px;
@@ -351,13 +345,6 @@
   }
   .counter b{color:var(--ink);font-weight:650}
 
-  #cap{
-    margin-top:16px;text-align:center;font-size:12.5px;color:var(--muted);
-    max-width:560px;margin-left:auto;margin-right:auto;line-height:1.6;
-    opacity:0;transform:translateY(6px);
-  }
-  #cap code{font-family:var(--mono);font-size:11px;color:var(--ink)}
-  #cap .ok{color:var(--green)}
 
   /* transport bar, inverted so it reads on dark */
   #transport{
@@ -458,7 +445,7 @@
   <div id="diagram">
     <div id="cols">
       <section class="inputcard card" id="inL">
-        <div class="ilbl">INPUT &middot; PROSE PROMPT</div>
+        <div class="ttl">Input (Prose)</div>
         <div class="irows" id="rowsL">
           <div class="irow" data-r="0" aria-hidden="true">&nbsp;</div>
           <div class="irow hv" data-r="1"><span class="g">Today's scam patterns: </span>safe account calls<span class="g">; </span>private car sales...</div>
@@ -472,7 +459,7 @@
         </div>
       </section>
       <section class="inputcard card" id="inR">
-        <div class="ilbl">INPUT &middot; TYPED REQUEST</div>
+        <div class="ttl">Input (JSON/Image)</div>
         <div class="irows" id="rowsR">
           <div class="irow" data-r="0"><span class="g">{ "state": {</span></div>
           <div class="irow hv" data-r="1"><span class="g">    "scam_patterns": ["</span>safe account calls<span class="g">", "</span>private car sales...<span class="g">"],</span></div>
@@ -487,17 +474,16 @@
       </section>
 
       <section class="modelbox card" id="boxL">
-        <div class="title">COMPLETION MODEL</div>
-        <div class="subtitle">a large language model</div>
+        <div class="ttl">LLM (e.g. ChatGPT)</div>
         <canvas class="weights" id="weightsL"></canvas>
       </section>
       <section class="modelbox card" id="boxR">
-        <div class="title">DECISION MODEL</div>
-        <div class="subtitle">e.g. Jev, a System 1 model</div>
+        <div class="ttl">Decision Model (e.g. Jev)</div>
         <canvas class="weights" id="weightsR"></canvas>
       </section>
 
       <section class="ocard card" id="ocardL">
+        <div class="ttl">Output</div>
         <span class="ghost" id="ghostL">...</span>
         <div class="block"><span class="btxt" id="b0"></span></div>
         <div class="block"><span class="btxt" id="b1"></span></div>
@@ -506,6 +492,7 @@
       </section>
       <section class="ocard card" id="ocardR">
         <div class="flash" id="flashR"></div>
+        <div class="ttl">Output</div>
         <span class="ghost" id="ghostR">...</span>
         <div id="rjson"></div>
       </section>
@@ -514,7 +501,6 @@
       <div class="counter" id="cntR">passes: 0 &middot; output tokens: 0</div>
     </div>
 
-    <p id="cap">Both catch <code>Quick Coin Limited</code>: a fuzzy match to yesterday's flagged <code>QuickCoin Ltd</code>. <span class="ok">The difference is not the judgement, it is how it is delivered.</span></p>
   </div>
 
   <div id="transport" role="group" aria-label="Playback controls">
@@ -613,7 +599,6 @@ var ocardR=document.getElementById('ocardR');
 var flashR=document.getElementById('flashR');
 var rjson=document.getElementById('rjson');
 var cntL=document.getElementById('cntL'), cntR=document.getElementById('cntR');
-var capEl=document.getElementById('cap');
 var playBtn=document.getElementById('playBtn');
 var startBtn=document.getElementById('startBtn');
 var stepBtn=document.getElementById('stepBtn');
@@ -806,10 +791,6 @@ function renderAt(t,wall){
     ? 'passes: <b>1</b> &middot; output tokens: <b>0</b> (scores, not text)'
     : 'passes: <b>0</b> &middot; output tokens: <b>0</b>';
 
-  /* shared payoff caption */
-  var cp=easeOut((t-CAPTION_T)/420);
-  capEl.style.opacity=cp.toFixed(2);
-  capEl.style.transform='translateY('+(6*(1-cp)).toFixed(1)+'px)';
 
   /* transport state */
   var cur=-1;

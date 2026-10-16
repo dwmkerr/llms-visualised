@@ -4,7 +4,7 @@ The prompt below should recreate `completion-vs-decision.html` in one shot. It i
 
 ---
 
-Build a single self-contained HTML page: an animated explainer called "One answer at a time, or all at once". It shows a non-technical reader the difference between coaxing a completion LLM into a decision and asking a purpose-built decision model. No build step, no external dependencies at all, must work from file://.
+Build a single self-contained HTML page: an animated explainer called "LLMs vs Decision Models". It shows a non-technical reader the difference between coaxing a completion LLM into a decision and asking a purpose-built decision model. No build step, no external dependencies at all, must work from file://.
 
 ## The concept
 
@@ -12,19 +12,19 @@ Same data, two packagings, two output behaviours. The left side is a completion 
 
 ## Layout, top to bottom, centred column
 
-1. Title: "One answer at a time, or all at once". Subtitle: "Two ways to get a judgement from a model. Same input, same question; what differs is how the answer comes out."
+1. Title: "LLMs vs Decision Models", italic. Subtitle, italic: "A high level visualisation of the differences between how a large-language-model and a decision model produce output."
 2. Two columns in one grid so every row lines up across both sides: input card, model box, output card, counter row. Columns stack on narrow screens, left story first.
-3. Input cards, mono, both show the FULL input. Left label "INPUT · PROSE PROMPT", right label "INPUT · TYPED REQUEST" (blue). Same facts, roughly aligned:
+3. Input cards, mono, both show the FULL input. Every card has the same sans title style (small, semibold, centred). Left input title "Input (Prose)", right input title "Input (JSON/Image)". Same facts, roughly aligned:
    - Left (prose with JSON-ish bits): today's scam patterns (safe account calls; private car sales...); flagged payees QuickCoin Ltd, J. Marku; "Rank each transaction as safe, low or high risk."; "Reply ONLY with JSON: {"txn_1": {"choice": ...}, ...}"; three numbered transactions: £14,900 to "Quick Coin Limited", new payee, 23:40...; £42 to "Tesco", regular payee, "weekly shop"; £880 refund from "GymFlex", known payee.
    - Right (JSON): state with scam_patterns and flagged_payees; questions txn_1..3 each with type choice, criteria safe/low/high, and an instructions string carrying the same transaction text. Use `...` ellipses wherever detail would add noise.
-4. Model boxes in the word-galaxy style: rounded paper card, two-line heading, blue weights-dot matrix inside. Left: "COMPLETION MODEL / a large language model". Right: "DECISION MODEL / e.g. Jev, a System 1 model". Weights dormant until running; sparkle only, no travelling wave.
-5. Output cards, mono JSON.
+4. Model boxes in the word-galaxy style: rounded paper card, two-line heading, blue weights-dot matrix inside. Left title "LLM (e.g. ChatGPT)". Right title "Decision Model (e.g. Jev)". Weights dormant until running; sparkle only, no travelling wave.
+5. Output cards, each titled "Output", mono JSON.
    - Left: types character by character at a brisk clip (roughly 25-40 chars/s, slight per-character jitter), three blocks sequentially, one per call: txn_1 "high", txn_2 "safe", txn_3 "safe". Caret visible while typing. Weights sparkle for the entire duration of typing and track typing activity; brief pause between blocks (new call). After the third block the model keeps going with a red coda line in prose ("Not all of these are safe - and not for the reason you might expect. Would you like me to explain more?"): the completion model does not know when to stop.
    - Right: after one sparkle burst (~400-600ms), the full answers object appears in ONE frame, all three answers, each with a probability (e.g. txn_1 high 0.80, txn_2 safe 0.93, txn_3 safe 0.88) drawn as a small proportion box behind the digits. One subtle stamp animation (scale 1.03 to 1, one-frame flash), no per-character reveal.
 6. Counter row under each side, mono, counting up live. Left: `passes: ~N · output tokens: ~N` (one per output character). Right: `passes: 1 · output tokens: 0 (scores, not text)`. Counts labelled approximate. NO milliseconds, NO cost figures.
-7. Verdict caption under the columns, fades in at the end: "Both catch Quick Coin Limited: a fuzzy match to yesterday's flagged QuickCoin Ltd. The difference is not the judgement, it is how it is delivered." (second sentence green).
-8. Transport bar in the word-galaxy style: solid dark icon buttons, back to start, play/pause toggle, one small clickable dot per step (filled = current), step forward. Aria-labels on all buttons.
-9. Footer legend: blue dots are the model's weights firing; on the left every output character is another full pass through the weights, one call per question; on the right one pass scores every question at once (fan-out) and the verdicts are read straight from typed outputs, no text generated; counts are approximate; words stand in for tokens.
+7. Transport bar in the word-galaxy style: solid dark icon buttons, back to start, play/pause toggle, one small clickable dot per step (filled = current), step forward. Aria-labels on all buttons.
+8. No caption or footer legend on the page; the surrounding article carries that explanation.
+9. When embedded in an iframe, post the rendered content height to the parent (postMessage) on load, on resize and on a slow interval so the embedding page can size the frame.
 
 ## Same data, two packagings (the input cards)
 
@@ -36,7 +36,7 @@ Make it unmistakable that the two inputs are the SAME DATA, differently structur
 4. Hover twin-highlight (pointer-fine only). Hovering a row on either side tints both twins softly (paper-blue) and dims the other rows; mouse out restores. No layout shift.
 5. The unpaired row. The left's "Reply ONLY with JSON: {...}" line has no counterpart; its right-hand slot holds a faint italic ghost note `(not needed: output is typed)`. Hovering the left row highlights the ghost note. That one row with no twin IS the difference.
 
-The QuickCoin Ltd / Quick Coin Limited near-miss is green on both sides, in both inputs and in the caption.
+The QuickCoin Ltd / Quick Coin Limited near-miss is green on both sides, in both inputs.
 
 ## Playback
 
@@ -58,4 +58,4 @@ Exactly the word-galaxy language: paper palette (`--bg:#faf9f6; --ink:#24292f; -
 
 ## Provenance
 
-Final file is round-7c iteration `sb02` (bolder choreography: per-character jitter, sparkle tracks typing, theatrical stamp, bars grow in), chosen over `sb01` (restrained). Source briefs live in `dwmkerr.com/scratch/jev-explainer/typewriter/`. Article context: `dwmkerr.com/content/post/2026/decision-models-understanding-jev/`.
+Final file is the published `static/visuals/llm-vs-decision-model.html` in dwmkerr.com, which grew out of round-7c iteration `sb02` (bolder choreography: per-character jitter, sparkle tracks typing, theatrical stamp, bars grow in), chosen over `sb01` (restrained). Source briefs live in `dwmkerr.com/scratch/jev-explainer/typewriter/`. Article context: `dwmkerr.com/content/post/2026/decision-models-understanding-jev/`.
