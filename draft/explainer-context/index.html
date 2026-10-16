@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-WFTE4NBDQ1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-WFTE4NBDQ1');
+</script>
+<link rel="icon" type="image/png" href="../../favicon.png">
+<title>How context picks a meaning</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    background: #0a0a0f;
+  }
+
+  #narrative-panel {
+    width: 40%;
+    min-width: 340px;
+    height: 100vh;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    box-shadow: 4px 0 30px rgba(0,0,0,0.3);
+  }
+
+  #narrative-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 4.5rem 2.5rem 3rem;
+    overflow-y: auto;
+  }
+
+  /* auto margins centre the copy when it fits, and let it scroll from the
+     top instead of clipping when it is taller than the panel */
+  .stage-inner { margin: auto 0; }
+
+  .stage-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+
+  .stage-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.25;
+    margin-bottom: 1.2rem;
+  }
+
+  .stage-body {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #444;
+    font-weight: 400;
+  }
+
+  .stage-body p { margin-bottom: 0.9rem; }
+  .stage-body a { color: #1565c0; }
+
+  .word-tag {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin: 0 0.05em;
+  }
+
+  .word-loan     { background: rgba(255,183,77,0.2);  color: #e68a00; }
+  .word-rate     { background: rgba(66,165,245,0.2);  color: #1565c0; }
+  .word-interest { background: rgba(102,187,106,0.2); color: #2e7d32; }
+
+  /* Branding */
+  .branding {
+    position: absolute;
+    top: 1rem;
+    left: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    z-index: 20;
+  }
+
+  .branding-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .branding-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #666;
+    letter-spacing: 0.04em;
+  }
+
+  .branding-title {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #999;
+    letter-spacing: 0.02em;
+  }
+
+  .branding-section {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: #999;
+    letter-spacing: 0.02em;
+  }
+
+  .branding-section a {
+    color: #999;
+    text-decoration: none;
+  }
+
+  .branding-section a:hover { color: #666; }
+  .branding-section .current { color: #666; }
+
+  .branding-links {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .branding-links a {
+    display: flex;
+    color: #888;
+    transition: color 0.2s;
+  }
+
+  .branding-links a:hover { color: #555; }
+
+  .branding-links svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+  }
+
+  /* Navigation */
+  #nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 2.5rem;
+    border-top: 1px solid #e0e0e0;
+    background: #fff;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.5rem;
+    border: 2px solid #222;
+    border-radius: 8px;
+    background: #fff;
+    color: #222;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: #222;
+    color: #fff;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .nav-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  #progress {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ccc;
+    transition: all 0.35s;
+  }
+
+  .dot.active { background: #222; transform: scale(1.3); }
+  .dot.visited { background: #888; }
+
+  #narrative-content { transition: opacity 0.35s ease; }
+  #narrative-content.fading { opacity: 0; }
+
+  /* ---------------- viz panel: the galaxy explainer, dark ---------------- */
+  #viz-panel { flex: 1; position: relative; height: 100vh; overflow: hidden; background: #0a0a0f; }
+  #viz-panel canvas { display: block; }
+
+  #gl, #overlay {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  #gl { z-index: 0; }
+  #overlay { z-index: 4; }
+
+  #diagram {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; overflow: auto;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  #column {
+    margin: auto;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 22px; padding: 24px 16px;
+    max-width: 100%;
+  }
+
+  /* input band: boxed word chips reading as a sentence */
+  #sentence { font-family: var(--mono); font-size: 17px; text-align: center; line-height: 2.6; }
+  #sentence .w {
+    display: inline-block; padding: 4px 10px; margin: 0 2px; border-radius: 7px;
+    border: 1px solid #333; background: rgba(255,255,255,0.04); color: #ccc;
+    transition: color .25s, background .25s, border-color .25s, box-shadow .25s;
+  }
+  #sentence .w.active {
+    color: #fff; border-color: #66bb6a; background: rgba(102,187,106,0.18);
+    box-shadow: 0 0 0 3px rgba(102,187,106,0.14);
+  }
+  #sentence .w.done { color: #eee; }
+
+  /* the model card: fixed width, never widens, opaque so the galaxy core sits behind it */
+  #modelbox {
+    width: min(460px, 92vw);
+    max-width: 100%;
+    border: 1px solid #2a2a35; border-radius: 14px;
+    background: #15151c;
+    box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 14px 40px rgba(0,0,0,.45);
+    padding: 13px 18px 15px;
+  }
+  #modelbox .title {
+    font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.16em;
+    color: #eee; text-align: center;
+  }
+  #modelbox .subtitle {
+    font-family: var(--mono); font-size: 10.5px; color: #888;
+    text-align: center; margin-top: 2px; margin-bottom: 10px;
+  }
+  #weights { display: block; width: 100%; height: 76px; }
+  #modelbox .ctxlabel {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em;
+    color: #888; text-align: center; margin: 10px 0 7px;
+  }
+  #chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; min-height: 24px; }
+  .chip {
+    font-family: var(--mono); font-size: 11.5px; color: #ddd;
+    background: #22222c; border: 1px solid #33333f; border-radius: 6px; padding: 2px 7px;
+  }
+  .chip.new { animation: chipflash 1s ease-out; }
+  @keyframes chipflash {
+    0%   { opacity: 0; transform: translateY(-10px); background: rgba(66,165,245,.30); border-color: #42a5f5; color: #9fd0ff; }
+    35%  { opacity: 1; transform: none; background: rgba(66,165,245,.26); border-color: #42a5f5; color: #9fd0ff; }
+    100% { background: #22222c; border-color: #33333f; color: #ddd; }
+  }
+
+  #output { font-family: var(--mono); font-size: 18px; text-align: center; line-height: 2.3; min-height: 34px; }
+  #output .ghost { color: #3a3a46; }
+  #output .ow {
+    display: inline-block; padding: 2px 6px; border-radius: 5px; color: #999;
+    animation: appear .4s ease; transition: color .25s, background .25s;
+  }
+  #output .ow.active { color: #fff; background: rgba(102,187,106,.2); }
+  #output .ow.done { color: #eee; }
+  @keyframes appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* transport bar: one pill, light solid icon buttons flanking the step dots */
+  #transport {
+    display: flex; align-items: center; gap: 7px;
+    background: #15151c; border: 1px solid #2a2a35; border-radius: 999px;
+    padding: 7px 10px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.4);
+  }
+  .tbtn {
+    width: 34px; height: 34px; border-radius: 50%; border: none; padding: 0;
+    background: #eaeaea; color: #0a0a0f; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background .15s, transform .12s, opacity .15s;
+  }
+  .tbtn svg { width: 13px; height: 13px; display: block; }
+  .tbtn:hover:not(:disabled) { background: #c8c8cc; }
+  .tbtn:active:not(:disabled) { transform: scale(.88); }
+  .tbtn:disabled { opacity: .3; cursor: default; }
+  .tbtn:focus-visible { outline: 2px solid #42a5f5; outline-offset: 2px; }
+  /* play is the hero control: a touch larger, morphing play/pause glyph */
+  #playBtn { width: 40px; height: 40px; margin: 0 4px; }
+  #playBtn svg { width: 15px; height: 15px; }
+  #playBtn .ic-pause { display: none; }
+  #playBtn.playing .ic-play { display: none; }
+  #playBtn.playing .ic-pause { display: block; }
+  #dots { display: flex; gap: 7px; align-items: center; padding: 0 9px; }
+  .sdot {
+    width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: #3a3a46; cursor: pointer; transition: background .2s, transform .2s;
+  }
+  .sdot:hover { background: #888; }
+  .sdot.cur { background: #eee; transform: scale(1.3); }
+
+  @media (prefers-reduced-motion: reduce) {
+    #viz-panel * { animation: none !important; transition: none !important; }
+  }
+
+  @media (max-width: 800px) {
+    body { flex-direction: column; }
+    #narrative-panel { width: 100%; height: 45vh; min-width: unset; }
+    #viz-panel { height: 55vh; }
+    #narrative-content { padding: 4.5rem 1.5rem 1.5rem; }
+    .stage-title { font-size: 1.4rem; }
+    .branding { left: 1.5rem; }
+
+    #column { gap: 12px; padding: 12px; }
+    #sentence { font-size: 12.5px; line-height: 2.2; }
+    #sentence .w { padding: 2px 6px; margin: 0 1px; }
+    #modelbox { width: min(340px, 94vw); padding: 9px 12px 10px; border-radius: 10px; }
+    #modelbox .subtitle { margin-bottom: 6px; }
+    #weights { height: 48px; }
+    #modelbox .ctxlabel { margin: 7px 0 5px; }
+    #chips { min-height: 20px; }
+    .chip { font-size: 10.5px; padding: 1px 5px; }
+    #output { font-size: 13.5px; line-height: 1.9; min-height: 26px; }
+    #transport { padding: 5px 7px; gap: 5px; }
+    .tbtn { width: 28px; height: 28px; }
+    .tbtn svg { width: 11px; height: 11px; }
+    #playBtn { width: 32px; height: 32px; margin: 0 2px; }
+    #playBtn svg { width: 13px; height: 13px; }
+    #dots { gap: 5px; padding: 0 6px; }
+    .sdot { width: 7px; height: 7px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="narrative-panel">
+  <div class="branding">
+    <div class="branding-row">
+      <a href="https://dwmkerr.com" target="_blank" rel="noopener" class="branding-name" style="text-decoration: none; color: inherit;">dwmkerr</a>
+      <div class="branding-links">
+      <a href="https://linkedin.com/in/dwmkerr" target="_blank" rel="noopener" title="LinkedIn">
+        <svg viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+      </a>
+      <a href="https://github.com/dwmkerr/llms-visualised" target="_blank" rel="noopener" title="GitHub">
+        <svg viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+      </a>
+      <a href="https://dwmkerr.substack.com" target="_blank" rel="noopener" title="Substack">
+        <svg viewBox="0 0 24 24"><path d="M22.539 8.242H1.46V5.406h21.08v2.836zM1.46 10.812V24L12 18.11 22.54 24V10.812H1.46zM22.54 0H1.46v2.836h21.08V0z"/></svg>
+      </a>
+    </div>
+    </div>
+    <a href="https://github.com/dwmkerr/llms-visualised" target="_blank" rel="noopener" class="branding-title" style="text-decoration: none; color: inherit;">LLMs Visualised</a>
+    <div class="branding-section"><a href="../../index.html">Chapters</a> &middot; <span class="current">Explainers</span></div>
+  </div>
+  <div id="narrative-content"></div>
+  <div id="nav-bar">
+    <button class="nav-btn" id="btn-prev" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      Previous
+    </button>
+    <div id="progress"></div>
+    <button class="nav-btn" id="btn-next">
+      Next
+      <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="viz-panel">
+  <canvas id="gl"></canvas>
+  <canvas id="overlay"></canvas>
+  <div id="diagram">
+    <div id="column">
+      <div id="sentence"></div>
+
+      <section id="modelbox">
+        <div class="title">THE MODEL</div>
+        <div class="subtitle">a large language model</div>
+        <canvas id="weights"></canvas>
+        <div class="ctxlabel">CONTEXT</div>
+        <div id="chips"></div>
+      </section>
+
+      <div id="output"><span class="ghost">...</span></div>
+
+      <div id="transport" role="group" aria-label="Playback controls">
+        <button id="startBtn" class="tbtn" type="button" aria-label="Back to start" disabled>
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M3 2.5h2v11H3z"/><path d="M13 2.5v11L6.2 8z"/></svg>
+        </button>
+        <button id="playBtn" class="tbtn" type="button" aria-label="Play">
+          <svg class="ic-play" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 2.8l8.4 5.2L5 13.2z"/></svg>
+          <svg class="ic-pause" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 3h2.8v10H4z"/><path d="M9.2 3H12v10H9.2z"/></svg>
+        </button>
+        <button id="backBtn" class="tbtn" type="button" aria-label="Step back" disabled>
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3 5.5 8l5 5"/></svg>
+        </button>
+        <div id="dots"></div>
+        <button id="stepBtn" class="tbtn" type="button" aria-label="Step forward">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3l5 5-5 5"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ===================================================================
+   DATA
+   =================================================================== */
+var INPUT  = ['The','loan','came','with','a'];
+var OUTPUT = ['low','rate','of','interest'];
+var WORDS  = INPUT.concat(OUTPUT);
+var TOTAL  = WORDS.length;
+/* attention weights, backwards only, illustrative */
+var ATT = {
+  1:{0:0.40},
+  2:{1:0.70, 0:0.15},
+  3:{2:0.60, 1:0.30},
+  4:{3:0.50},
+  5:{1:0.45, 4:0.30, 3:0.20},
+  6:{5:0.70, 1:0.60},
+  7:{6:0.60},
+  8:{1:0.90, 6:0.85, 5:0.40, 7:0.30}    /* the money shot: loan and rate decide the sense */
+};
+/* every input and generated word owns a small semantic region */
+var CLUSTERS = [
+  {key:'function',  words:['the','a','an','of','to','and','that','with']},
+  {key:'lending',   words:['loan','borrow','lender','mortgage','credit','repay','debt','advance']},
+  {key:'arrival',   words:['came','arrived','reached','appeared','brought','went','turned up','showed']},
+  {key:'degree',    words:['low','small','modest','slight','reduced','lower','minimal','cheap']},
+  {key:'measure',   words:['rate','ratio','percent','level','pace','figure','yield','scale']},
+  {key:'money',     words:['interest','yield','return','APR','dividend','earnings','charge','payment']},
+  {key:'curiosity', words:['curious','fascinated','intrigued','attention','hobby','passion','keen','wondering']}
+];
+var NCL = CLUSTERS.length;
+/* per-step cluster lighting: clusterIndex -> strength */
+var STEP_SEM = [
+  {0:0.60},
+  {1:0.95},
+  {2:0.75},
+  {0:0.45},
+  {0:0.40},
+  {3:0.85},
+  {4:0.90, 5:0.25},
+  {0:0.40},
+  {5:1.00, 6:0.18}    /* the money shot: money strong, curiosity faint */
+];
+var GENERIC = ('river window music carry green above answer morning paper stone quiet garden before letter '+
+  'mountain sleep water father summer machine bright follow table orange winter simple between dream engine '+
+  'yellow market station pencil silver corner middle little travel listen sister wonder evening basket circle '+
+  'sudden valley animal copper number weight handle hidden flower branch minute spring castle bottle narrow '+
+  'ladder temple velvet marble beyond gather hollow timber canvas meadow ribbon saddle lantern harbor barrel '+
+  'thunder whisper journey village feather shadow breathe gentle wander pebble clover drift ember '+
+  'willow amber frost dune reef moss fern tide cliff grove plain brook ridge marsh glen shore peak dusk dawn '+
+  'north south east west open close early late small large warm cool soft loud near far deep thin wide').split(/\s+/);
+
+/* ===================================================================
+   STAGES (left panel). Each owns a step range on the right; the step
+   engine below stays the source of truth and the stages drive it.
+   =================================================================== */
+function tag(word, cls){ return '<span class="word-tag '+cls+'">'+word+'</span>'; }
+var LOAN=tag('loan','word-loan'), RATE=tag('rate','word-rate'), INTEREST=tag('interest','word-interest');
+
+var STAGES = [
+  {
+    label: 'Stage 1 of 5',
+    title: 'What the model sees',
+    from: -1, to: -1,
+    body: '<p>Here is the start of a sentence: <em>The loan came with a</em>. A language model reads it one word at a time, then writes what comes next.</p>'+
+          '<p>On the right, the sentence sits above a card that stands for the model. Inside the card are its weights and its <strong>context</strong>, the words it has read so far. Below the card is where its output will appear.</p>'+
+          '<p>The continuation it will write ends with the word '+INTEREST+'. That word can mean curiosity, or it can mean a charge on borrowed money. Nothing in the word itself says which. So how does the model pick a meaning?</p>'
+  },
+  {
+    label: 'Stage 2 of 5',
+    title: 'One word at a time',
+    from: 0, to: 4,
+    body: '<p>The model works through the sentence word by word. As each word is read it lights up, then drops into the context row inside the card.</p>'+
+          '<p>The green arrows are <strong>attention</strong>. They only ever point backwards, from the word being read to words already read. The model cannot look ahead, because the words ahead do not exist yet.</p>'+
+          '<p>The blue dots are the model\'s <strong>weights</strong>, the parameters it learned in training. A different handful fires for each word. Those weights light up a region of the word space behind the card, and that region swings overhead so you can read it.</p>'
+  },
+  {
+    label: 'Stage 3 of 5',
+    title: 'Generation begins',
+    from: 5, to: 7,
+    body: '<p>The input has run out, so now the model writes. Each new word appears below the card, one at a time.</p>'+
+          '<p>A generated word is treated exactly like one that was read. It goes through the same chain: attention back to earlier words, weights firing, a region of word space lighting up. Then it joins the context too, where the next word can attend to it.</p>'+
+          '<p>Watch '+RATE+'. The region it lights is about measurement, but a second region, money, already glows faintly beside it. The sentence is starting to lean.</p>'
+  },
+  {
+    label: 'Stage 4 of 5',
+    title: 'Context picks the meaning',
+    from: 8, to: 8,
+    body: '<p>Now the model generates '+INTEREST+'. The arrows reach back hardest to '+LOAN+' and '+RATE+'. Those two words matter most in deciding what this word means.</p>'+
+          '<p>The money region lights strongly and swings into view. Off to one side, the curiosity region stays dim. It was not ruled out by the word alone. It was ruled out by the company the word keeps.</p>'+
+          '<p>This is what context does. The same word, with different neighbours, would light a different region.</p>'
+  },
+  {
+    label: 'Stage 5 of 5',
+    title: 'What the field is',
+    from: 8, to: 8, hold: true,
+    body: '<p>The field behind the card is a slice of the <strong>word space</strong> the model knows: the same kind of space as the dimensions of meaning in <a href="../../index.html">Chapter 1</a>, flattened so it can be drawn. Words with similar meanings sit close together, which is why each lit region reads as a theme.</p>'+
+          '<p>A few things are simplified. Real models work on <strong>tokens</strong>, pieces of words, so the words here stand in for them. The arrow thicknesses and the brightness of each region are illustrative, not measured from a real model.</p>'+
+          '<p>Want to look again? Hover any word in the sentence or the output to replay its step. The transport bar below the card steps through and plays.</p>'+
+          '<p><strong>More chapters coming soon.</strong> For updates, check my <a href="https://dwmkerr.substack.com" target="_blank" style="color: #1565c0;">weekly digest on Substack</a>.</p>'
+  }
+];
+
+/* ===================================================================
+   DOM refs
+   =================================================================== */
+var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var hoverable = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+var panelEl = document.getElementById('viz-panel');
+var ocv = document.getElementById('overlay');
+var octx = ocv.getContext('2d');
+var glcv = document.getElementById('gl');
+var boxEl = document.getElementById('modelbox');
+var chipsEl = document.getElementById('chips');
+var outEl = document.getElementById('output');
+var ghostEl = outEl.querySelector('.ghost');
+var sentEl = document.getElementById('sentence');
+var wcv = document.getElementById('weights');
+var wctx = wcv.getContext('2d');
+var playBtn = document.getElementById('playBtn');
+var startBtn = document.getElementById('startBtn');
+var backBtn = document.getElementById('backBtn');
+var stepBtn = document.getElementById('stepBtn');
+var dotsEl = document.getElementById('dots');
+
+var narrativeContent = document.getElementById('narrative-content');
+var btnPrev = document.getElementById('btn-prev');
+var btnNext = document.getElementById('btn-next');
+var progressContainer = document.getElementById('progress');
+
+/* all screen-space maths is relative to the viz panel, not the viewport */
+var PR = {left:0, top:0, w:1, h:1};
+function measurePanel(){
+  var r=panelEl.getBoundingClientRect();
+  PR.left=r.left; PR.top=r.top; PR.w=Math.max(1,r.width); PR.h=Math.max(1,r.height);
+}
+
+var inSpans = INPUT.map(function(w,i){
+  var s=document.createElement('span'); s.className='w'; s.textContent=w;
+  sentEl.appendChild(s); sentEl.appendChild(document.createTextNode(' '));
+  attachHover(s,i);
+  return s;
+});
+var outSpans = [];
+
+/* one scrubber dot per step: inputs consumed plus generated words */
+var dotEls = WORDS.map(function(w,i){
+  var d=document.createElement('button');
+  d.className='sdot'; d.type='button';
+  d.setAttribute('aria-label','Step '+(i+1)+': '+w);
+  d.addEventListener('click', function(){ scrubTo(i); });
+  dotsEl.appendChild(d);
+  return d;
+});
+
+/* ===================================================================
+   STEP ENGINE
+   =================================================================== */
+var MONEY_SHOT = WORDS.indexOf('interest');
+var DURS = WORDS.map(function(_,i){ return i===MONEY_SHOT?2600:1600; });
+var GAP = 320;
+var cur=-1, t=0, phase='idle', autoplay=false, paused=false, done=false;
+var lastFinished=-1;
+var hoverIdx=null, hoverStart=0;
+var clockMs=0;
+var flags={chip:false};
+/* stage-driven autoplay halts after this step; -2 means run freely */
+var stopAt=-2;
+var stageDriving=false;
+
+/* causal chain phase starts within a step, ms (conservative, ~200 apart):
+   0 word highlight, 200 weights subset, 400 weights into galaxy,
+   600 galaxy words interconnect, 800 galaxy words back to origin */
+var PH_W=200, PH_WG=400, PH_GG=600, PH_GO=800;
+function pgate(tms,start){
+  var u=(tms-start)/260;
+  u=u<0?0:u>1?1:u;
+  return u*u*(3-2*u);
+}
+
+/* per-cluster eased brightness + warmth (0 green, 1 amber) */
+var CL = [];
+for(var ci=0;ci<NCL;ci++) CL.push({e:0,target:0,warm:0});
+
+function primaryOf(sem){
+  var best=-1,bs=-1;
+  for(var k in sem){ if(sem[k]>bs){ bs=sem[k]; best=+k; } }
+  return best;
+}
+
+function spawnOut(i){
+  if(ghostEl && ghostEl.parentNode){ ghostEl.parentNode.removeChild(ghostEl); }
+  var s=document.createElement('span'); s.className='ow active'; s.textContent=WORDS[i];
+  outEl.appendChild(s); outEl.appendChild(document.createTextNode(' '));
+  outSpans[i-INPUT.length]=s;
+  attachHover(s,i);
+}
+
+function markActive(i){
+  for(var j=0;j<inSpans.length;j++){
+    inSpans[j].classList.toggle('active', j===i);
+    if(j<i) inSpans[j].classList.add('done');
+  }
+  outSpans.forEach(function(s,j){
+    if(!s) return;
+    s.classList.toggle('active', j+INPUT.length===i);
+    if(j+INPUT.length<i){ s.classList.add('done'); s.classList.remove('active'); }
+  });
+}
+
+function addChip(i,flash){
+  var c=document.createElement('span');
+  c.className=flash?'chip new':'chip';
+  c.textContent=WORDS[i];
+  chipsEl.appendChild(c);
+}
+
+function beginStep(i){
+  cur=i; t=0; phase='run';
+  if(i>=INPUT.length && !outSpans[i-INPUT.length]) spawnOut(i);
+  markActive(i);
+  /* the word joins the context as part of the same beat as its highlight, not a trailing step */
+  addChip(i,true); flags.chip=true;
+  fireWeights();
+  if(GLX) GLX.kick();
+  updateScrubber();
+  syncStage();
+}
+
+function finishStep(){
+  if(!flags.chip){ addChip(cur,true); flags.chip=true; }
+  var el = cur<INPUT.length ? inSpans[cur] : outSpans[cur-INPUT.length];
+  if(el){ el.classList.remove('active'); el.classList.add('done'); }
+  lastFinished=cur;
+  if(cur===TOTAL-1) done=true;
+  updateScrubber();
+}
+
+function resetAll(){
+  cur=-1; t=0; phase='idle'; autoplay=false; paused=false; done=false;
+  lastFinished=-1; hoverIdx=null; flags.chip=false;
+  chipsEl.innerHTML='';
+  outSpans.forEach(function(s){ if(s&&s.parentNode) s.parentNode.removeChild(s); });
+  outSpans=[];
+  outEl.innerHTML=''; ghostEl=document.createElement('span');
+  ghostEl.className='ghost'; ghostEl.textContent='...'; outEl.appendChild(ghostEl);
+  inSpans.forEach(function(s){ s.classList.remove('active','done'); });
+  CL.forEach(function(c){ c.e=0; c.target=0; });
+  updateButtons();
+  updateScrubber();
+  syncStage();
+}
+
+/* rebuild the full state as it stands at step k (k = -1 clears) */
+function jumpState(k){
+  if(k<0){ resetAll(); return; }
+  autoplay=false; paused=false; phase='idle'; t=0; hoverIdx=null;
+  cur=k; lastFinished=k; done=(k===TOTAL-1); flags.chip=true;
+  chipsEl.innerHTML='';
+  outSpans.forEach(function(s){ if(s&&s.parentNode) s.parentNode.removeChild(s); });
+  outSpans=[];
+  outEl.innerHTML='';
+  if(k<INPUT.length){
+    ghostEl=document.createElement('span');
+    ghostEl.className='ghost'; ghostEl.textContent='...';
+    outEl.appendChild(ghostEl);
+  } else {
+    ghostEl=null;
+  }
+  for(var i=0;i<=k;i++){
+    addChip(i,false);
+    if(i>=INPUT.length) spawnOut(i);
+  }
+  inSpans.forEach(function(s,j){
+    s.classList.remove('active','done');
+    if(j<k) s.classList.add('done');
+    if(j===k) s.classList.add('active');
+  });
+  outSpans.forEach(function(s,j){
+    if(!s) return;
+    var gi=j+INPUT.length;
+    s.classList.remove('active','done');
+    if(gi<k) s.classList.add('done');
+    if(gi===k) s.classList.add('active');
+  });
+  fireWeights();
+  updateButtons();
+  updateScrubber();
+  syncStage();
+}
+
+function scrubTo(k){
+  if(k===cur && phase!=='run') return;
+  if(reduced){ jumpState(k); renderStaticFor(k); return; }
+  jumpState(k);
+}
+
+function updateButtons(){
+  var playing = phase!=='idle' && autoplay && !paused;
+  playBtn.classList.toggle('playing', playing && !done);
+  playBtn.setAttribute('aria-label', done ? 'Replay' : (playing ? 'Pause' : 'Play'));
+}
+
+function updateScrubber(){
+  for(var i=0;i<dotEls.length;i++) dotEls[i].classList.toggle('cur', i===cur);
+  backBtn.disabled = cur<0;
+  startBtn.disabled = cur<0;
+  stepBtn.disabled = done && cur===TOTAL-1 && phase==='idle';
+}
+
+/* reduced motion: apply steps instantly */
+function instantStep(){
+  if(done) return;
+  var i=cur+1;
+  cur=i; phase='idle'; lastFinished=i;
+  if(i>=INPUT.length && !outSpans[i-INPUT.length]) spawnOut(i);
+  markActive(i);
+  addChip(i,true);
+  fireWeights();
+  if(i===TOTAL-1){
+    done=true;
+    inSpans.forEach(function(s){ s.classList.remove('active'); s.classList.add('done'); });
+    outSpans.forEach(function(s){ if(s){ s.classList.remove('active'); s.classList.add('done'); } });
+  }
+  updateButtons();
+  updateScrubber();
+  syncStage();
+}
+function runAllInstant(){ while(!done) instantStep(); }
+
+/* reduced motion static frame for step k: full chain, no motion */
+function applyStaticSem(k){
+  var sem=STEP_SEM[k], prim=primaryOf(sem);
+  CL.forEach(function(c,i2){
+    if(sem[i2]!==undefined){ c.e=sem[i2]*0.7; c.warm=(i2===prim?0:1); }
+    else c.e=0;
+  });
+}
+function renderStaticFor(k){
+  measurePanel();
+  if(k<0){
+    CL.forEach(function(c){ c.e=0; c.target=0; });
+    if(GLX) GLX.renderIdle();
+    drawWeights(null);
+    octx.clearRect(0,0,PR.w,PR.h);
+    return;
+  }
+  applyStaticSem(k);
+  if(GLX) GLX.renderStatic(k);
+  var disp={i:k, prog:1, env:0.7, tms:1e6};
+  drawWeights(disp);
+  drawOverlay(disp);
+}
+
+/* ---------- hover replay: a true re-run of the step timeline ----------
+   works on every word, processed or not; a future word's run is drawn as
+   a ghosted preview, and mouse out restores the real current state */
+function attachHover(el, idx){
+  if(!hoverable || reduced) return;
+  el.addEventListener('pointerenter', function(){
+    hoverIdx=idx; hoverStart=clockMs;
+    el.classList.add('active');
+    fireWeights();
+    if(GLX) GLX.kick();
+  });
+  el.addEventListener('pointerleave', function(){
+    if(hoverIdx!==idx) return;
+    hoverIdx=null;
+    if(idx!==cur) el.classList.remove('active');
+    /* restore the held step's weight subset */
+    if(cur>=0) fireWeights();
+  });
+}
+
+/* ---------- transport controls: these run freely, and the left panel follows ---------- */
+playBtn.addEventListener('click', function(){
+  if(reduced){
+    if(done) resetAll();
+    runAllInstant(); renderStaticFor(cur);
+    return;
+  }
+  stopAt=-2;
+  if(done){ resetAll(); autoplay=true; beginStep(0); }
+  else if(phase==='idle'){ autoplay=true; paused=false; beginStep(cur+1); }
+  else {
+    if(!autoplay){ autoplay=true; paused=false; }
+    else if(paused){ paused=false; }
+    else { paused=true; }
+  }
+  updateButtons();
+});
+
+stepBtn.addEventListener('click', function(){
+  if(reduced){ instantStep(); renderStaticFor(cur); return; }
+  if(done && phase==='idle' && cur===TOTAL-1) return;
+  autoplay=false; paused=false;
+  /* one press is always one word: a step still animating is settled first, then the next begins */
+  if(phase==='run') finishStep();
+  if(cur<TOTAL-1) beginStep(cur+1);
+  else phase='idle';
+  updateButtons();
+});
+
+backBtn.addEventListener('click', function(){
+  if(cur<0) return;
+  var k=cur-1;
+  if(reduced){ jumpState(k); renderStaticFor(k); return; }
+  jumpState(k);
+});
+
+startBtn.addEventListener('click', function(){
+  resetAll();
+  if(reduced) renderStaticFor(-1);
+});
+
+/* ---------- pointer parallax, relative to the panel ---------- */
+var tx=0,ty=0,mx=0,my=0;
+if(!reduced){
+  window.addEventListener('mousemove', function(e){
+    var x=(e.clientX-PR.left)/PR.w*2-1;
+    var y=(e.clientY-PR.top)/PR.h*2-1;
+    tx=Math.max(-1,Math.min(1,x));
+    ty=Math.max(-1,Math.min(1,y));
+  });
+}
+
+/* ---------- display state: what the visuals show this frame ---------- */
+function easeOutCubic(u){ u=Math.max(0,Math.min(1,u)); return 1-Math.pow(1-u,3); }
+
+function displayState(){
+  if(hoverIdx!==null){
+    /* identical timeline to a live step, held once complete; a step the
+       timeline has not reached yet is flagged as a preview */
+    var ht=clockMs-hoverStart;
+    var hpr=Math.min(1,ht/DURS[hoverIdx]);
+    return {i:hoverIdx, prog:easeOutCubic(hpr/0.35), env:1, tms:ht, preview:hoverIdx>lastFinished};
+  }
+  if(phase==='run'){
+    var pr=Math.min(1,t/DURS[cur]);
+    var tail = autoplay ? 0 : 0.55;
+    var env = pr<0.85 ? 1 : Math.max(tail,(1-pr)/0.15);
+    return {i:cur, prog:easeOutCubic(pr/0.35), env:env, tms:t};
+  }
+  if(phase==='gap') return null;
+  if(cur>=0) return {i:cur, prog:1, env:0.55, tms:1e6};  /* hold the current step */
+  return null;
+}
+
+/* ---------- engine update ---------- */
+function update(dt){
+  clockMs+=dt;
+  var dtf=dt/16.7;
+  mx += (tx-mx)*Math.min(1,0.05*dtf);
+  my += (ty-my)*Math.min(1,0.05*dtf);
+
+  var disp=displayState();
+
+  /* cluster brightness targets follow the display state */
+  var sem = disp ? STEP_SEM[disp.i] : null;
+  var prim = sem ? primaryOf(sem) : -1;
+  for(var k=0;k<NCL;k++){
+    var c=CL[k];
+    c.target = sem && sem[k]!==undefined ? sem[k]*Math.min(1,disp.env+0.25) : 0;
+    if(sem && sem[k]!==undefined) c.warm = (k===prim?0:1);
+    var rate = c.target>c.e ? 0.14 : 0.04;
+    c.e += (c.target-c.e)*(1-Math.pow(1-rate,dtf));
+  }
+
+  if(paused) return disp;
+
+  if(phase==='run'){
+    t+=dt;
+    var pr=t/DURS[cur];
+    if(pr>=1){
+      finishStep();
+      /* a stage-driven run halts at the end of its range; free play runs on */
+      if(autoplay && cur<TOTAL-1 && cur!==stopAt){ phase='gap'; t=0; }
+      else { phase='idle'; autoplay=false; updateButtons(); }
+    }
+  } else if(phase==='gap'){
+    t+=dt;
+    if(t>=GAP){
+      if(autoplay) beginStep(cur+1);
+      else phase='idle';
+    }
+  }
+  return disp;
+}
+
+/* ---------- diagram rect in panel space (the zone the galaxy hugs) ---------- */
+function diagramRect(){
+  var a=sentEl.getBoundingClientRect();
+  var b=boxEl.getBoundingClientRect();
+  var c=outEl.getBoundingClientRect();
+  var left=Math.min(a.left,b.left,c.left)-PR.left, right=Math.max(a.right,b.right,c.right)-PR.left;
+  var top=Math.min(a.top,b.top,c.top)-PR.top, bottom=Math.max(a.bottom,b.bottom,c.bottom)-PR.top;
+  return {cx:(left+right)/2, cy:(top+bottom)/2, hw:(right-left)/2, hh:(bottom-top)/2};
+}
+
+/* ---------- weights matrix (blue dots inside the model card) ---------- */
+var W = {cols:0, rows:6, cells:[], w:0, h:0, lit:[]};
+
+function sizeWeights(){
+  var dpr=Math.min(2,window.devicePixelRatio||1);
+  var r=wcv.getBoundingClientRect();
+  W.w=r.width; W.h=r.height;
+  wcv.width=Math.round(r.width*dpr); wcv.height=Math.round(r.height*dpr);
+  wctx.setTransform(dpr,0,0,dpr,0,0);
+  W.cols=Math.max(12,Math.floor(r.width/13.5));
+  W.cells=[];
+  var gx=r.width/W.cols, gy=r.height/W.rows;
+  for(var ry=0;ry<W.rows;ry++)
+    for(var cx=0;cx<W.cols;cx++)
+      W.cells.push({x:gx*(cx+0.5), y:gy*(ry+0.5), c:cx, r:ry, ph:Math.random()*6.283});
+}
+
+/* firing = a fresh random lit subset sparkles up; no travelling wave */
+function fireWeights(){
+  W.lit=[];
+  if(!W.cells.length) return;
+  var count=Math.min(W.cells.length, 22+((Math.random()*8)|0));
+  var used={};
+  var guard=0;
+  while(W.lit.length<count && guard<600){
+    guard++;
+    var idx=(Math.random()*W.cells.length)|0;
+    if(used[idx]) continue;
+    used[idx]=1;
+    W.lit.push({idx:idx, delay:Math.random()*160});
+  }
+}
+
+function drawWeights(disp){
+  wctx.clearRect(0,0,W.w,W.h);
+  /* the lit subset: parameters touching the displayed word, phase-gated */
+  var litMap=null;
+  if(disp){
+    litMap={};
+    for(var li=0;li<W.lit.length;li++){
+      var L=W.lit[li];
+      var u=(disp.tms-PH_W-L.delay)/200;
+      if(u>0) litMap[L.idx]=Math.min(1,u)*Math.min(1,disp.env+0.3);
+    }
+  }
+  for(var i=0;i<W.cells.length;i++){
+    var cell=W.cells[i];
+    var inten=0;
+    if(litMap && litMap[i]!==undefined){
+      /* per-dot twinkle: two incommensurate sines per dot give each one
+         its own lively flicker, and the radius pulses with it */
+      var tw=0.52+0.33*Math.sin(clockMs*0.0062+cell.ph*5.1)
+                 +0.15*Math.sin(clockMs*0.0027+cell.ph*2.3);
+      inten=litMap[i]*Math.max(0.15,tw);
+    }
+    /* dormant base: a flat faint dot, so nothing moves until a step fires */
+    var idle=0.18;
+    var a=Math.min(0.97, idle+0.82*inten);
+    wctx.fillStyle='rgba(66,165,245,'+a.toFixed(3)+')';
+    wctx.beginPath();
+    wctx.arc(cell.x,cell.y,1.9+1.9*inten,0,6.2832);
+    wctx.fill();
+  }
+}
+
+/* panel-space positions of a spread of lit weight cells: blue line origins */
+function litWeightAnchors(max){
+  var out=[];
+  if(!W.lit.length) return out;
+  var r=wcv.getBoundingClientRect();
+  for(var i=0;i<W.lit.length && out.length<max;i+=3){
+    var c=W.cells[W.lit[i].idx];
+    if(!c) continue;
+    out.push({x:r.left-PR.left+c.x, y:r.top-PR.top+c.y});
+  }
+  return out;
+}
+
+/* ---------- attention arrows + weight lines overlay (panel space) ---------- */
+function anchor(i){
+  var el = i<INPUT.length ? inSpans[i] : outSpans[i-INPUT.length];
+  if(!el) return null;
+  var r=el.getBoundingClientRect();
+  return {cx:r.left-PR.left+r.width/2, top:r.top-PR.top, bottom:r.bottom-PR.top};
+}
+
+function quadPt(x1,y1,cx,cy,x2,y2,u){
+  var a=(1-u)*(1-u), b=2*(1-u)*u, d=u*u;
+  return [a*x1+b*cx+d*x2, a*y1+b*cy+d*y2];
+}
+
+var ARROW_RGB='rgb(102,187,106)';
+var WEIGHT_RGB='rgb(66,165,245)';
+
+function drawArrow(A,B,wgt,prog,env,preview){
+  if(prog<=0.02 || env<=0.01) return;
+  var x1=A.cx, y1=A.top-4, x2=B.cx, y2, ccx, ccy;
+  if(Math.abs(A.top-B.top)<12){
+    y2=B.top-4;
+    ccx=(x1+x2)/2;
+    ccy=Math.min(y1,y2) - (16 + Math.abs(x2-x1)*0.18 + wgt*10);
+  } else {
+    y2=B.bottom+3;
+    ccx=(x1+x2)/2 + (y2-y1)*0.22;
+    ccy=(y1+y2)/2 + (x1-x2)*0.22;
+  }
+  var alpha=(0.25+0.65*wgt)*env;
+  if(preview){
+    /* ghosted preview: dashed stroke with a slow dash march and a gentle
+       alpha shimmer, so a future step reads as "what will happen" */
+    alpha*=0.55+0.12*Math.sin(clockMs*0.012);
+    octx.setLineDash([6,5]);
+    octx.lineDashOffset=-clockMs*0.02;
+  }
+  var n=24, m=Math.max(2,Math.round(n*prog));
+  octx.strokeStyle=ARROW_RGB;
+  octx.globalAlpha=alpha;
+  octx.lineWidth=0.8+2.2*wgt;
+  octx.lineCap='round';
+  octx.beginPath();
+  for(var k=0;k<=m;k++){
+    var u=(k/n)*prog;
+    var pt=quadPt(x1,y1,ccx,ccy,x2,y2,u);
+    if(k===0) octx.moveTo(pt[0],pt[1]); else octx.lineTo(pt[0],pt[1]);
+  }
+  octx.stroke();
+  if(preview){ octx.setLineDash([]); octx.lineDashOffset=0; }
+  if(prog>0.95){
+    var e=quadPt(x1,y1,ccx,ccy,x2,y2,prog);
+    var dx=2*(1-prog)*(ccx-x1)+2*prog*(x2-ccx);
+    var dy=2*(1-prog)*(ccy-y1)+2*prog*(y2-ccy);
+    var len=Math.hypot(dx,dy)||1; dx/=len; dy/=len;
+    var sz=4+3.5*wgt;
+    octx.fillStyle=ARROW_RGB;
+    octx.beginPath();
+    octx.moveTo(e[0],e[1]);
+    octx.lineTo(e[0]-dx*sz-dy*sz*0.5, e[1]-dy*sz+dx*sz*0.5);
+    octx.lineTo(e[0]-dx*sz+dy*sz*0.5, e[1]-dy*sz-dx*sz*0.5);
+    octx.closePath();
+    octx.fill();
+  }
+  octx.globalAlpha=1;
+}
+
+function drawOverlay(disp){
+  octx.clearRect(0,0,PR.w,PR.h);
+  if(!disp) return;
+  var A=anchor(disp.i);
+  if(!A) return;
+
+  /* causal chain phase c: faint blue lines from lit weights into the
+     primary cluster, drawn above the card so they visibly leave it */
+  var pc=pgate(disp.tms,PH_WG);
+  if(pc>0.01 && GLX){
+    var sem=STEP_SEM[disp.i];
+    var prim=primaryOf(sem);
+    if(prim>=0 && CL[prim].e>0.05){
+      var ws=litWeightAnchors(6);
+      var cps=GLX.clusterScreenPoints(prim,6);
+      if(ws.length && cps.length){
+        octx.strokeStyle=WEIGHT_RGB;
+        octx.lineWidth=0.8;
+        octx.lineCap='round';
+        octx.globalAlpha=Math.min(0.3, 0.26*pc*disp.env*(CL[prim].e+0.25));
+        for(var m=0;m<ws.length;m++){
+          var cp=cps[m%cps.length];
+          var mxp=(ws[m].x+cp.x)/2+(cp.y-ws[m].y)*0.08;
+          var myp=(ws[m].y+cp.y)/2-(cp.x-ws[m].x)*0.08;
+          octx.beginPath();
+          octx.moveTo(ws[m].x,ws[m].y);
+          octx.quadraticCurveTo(mxp,myp,cp.x,cp.y);
+          octx.stroke();
+        }
+        octx.globalAlpha=1;
+      }
+    }
+  }
+
+  /* phase f: backwards attention arrows, never forward */
+  var att=ATT[disp.i];
+  if(att){
+    for(var key in att){
+      var B=anchor(+key);
+      if(B) drawArrow(A,B,att[key],disp.prog,disp.env,!!disp.preview);
+    }
+  }
+}
+
+/* ================================================================
+   THE GALAXY: three.js r128, a spherical core most dense at its
+   centre behind the diagram, thinning radially in all three axes
+   ================================================================ */
+var GLX=null;
+
+function initGalaxy(){
+  if(typeof THREE==='undefined') return null;
+  var renderer;
+  try{
+    renderer=new THREE.WebGLRenderer({canvas:glcv, antialias:true, alpha:true});
+  }catch(e){ return null; }
+  var dpr=Math.min(2,window.devicePixelRatio||1);
+  renderer.setPixelRatio(dpr);
+  renderer.setClearColor(0x000000,0);
+
+  var FOV=40;
+  var camera=new THREE.PerspectiveCamera(FOV,1,10,8000);
+  var scene=new THREE.Scene();
+  var group=new THREE.Group();
+  scene.add(group);
+
+  var camDist=900;
+  var OVERHEAD=new THREE.Vector3(0,0.93,0.36).normalize();
+
+  /* cluster home directions: golden spiral over the sphere */
+  var clusterDirs=[];
+  for(var k=0;k<NCL;k++){
+    var y=1-2*(k+0.5)/NCL;
+    var r=Math.sqrt(Math.max(0,1-y*y));
+    var phi=k*2.39996;
+    clusterDirs.push(new THREE.Vector3(r*Math.cos(phi),y,r*Math.sin(phi)).normalize());
+  }
+
+  function randn(){
+    var u=0,v=0;
+    while(u===0)u=Math.random();
+    while(v===0)v=Math.random();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(6.2832*v);
+  }
+  function randDir(){
+    var v=new THREE.Vector3(randn(),randn(),randn());
+    return v.lengthSq()<1e-9 ? new THREE.Vector3(0,1,0) : v.normalize();
+  }
+  function nearDir(d,sig){
+    return new THREE.Vector3(d.x+randn()*sig, d.y+randn()*sig, d.z+randn()*sig).normalize();
+  }
+
+  var uniforms={
+    uRadii:{value:new THREE.Vector3(420,330,300)},
+    uTime:{value:0},
+    uDist:{value:camDist},
+    uDpr:{value:dpr},
+    uRes:{value:new THREE.Vector2(1,1)},
+    uRect:{value:new THREE.Vector4(0,0,100,100)},
+    uBright:{value:new Array(NCL+1).fill(0)},
+    uWarm:{value:new Array(NCL+1).fill(0)}
+  };
+
+  /* dots show at full strength over the diagram: the sphere's dense centre
+     sits behind the opaque card with no hole and no edge band; legibility
+     comes from each core dot being small and faint, not from masking.
+     Only the outer falloff remains so the field thins away from the panel
+     centre. Word quads keep a soft ring so readable words avoid text. */
+  var MASK_DOTS=[
+    'vec2 ndc = gl_Position.xy / gl_Position.w;',
+    'vec2 sp = vec2((ndc.x*0.5+0.5)*uRes.x, (0.5-ndc.y*0.5)*uRes.y);',
+    'vec2 dxy = max(abs(sp - uRect.xy) - uRect.zw, 0.0);',
+    'float dEdge = length(dxy);',
+    'float mask = 1.0 - smoothstep(460.0, 720.0, dEdge);'
+  ].join('\n');
+  var MASK_QUADS=[
+    'vec2 ndc = gl_Position.xy / gl_Position.w;',
+    'vec2 sp = vec2((ndc.x*0.5+0.5)*uRes.x, (0.5-ndc.y*0.5)*uRes.y);',
+    'vec2 dxy = max(abs(sp - uRect.xy) - uRect.zw, 0.0);',
+    'float dEdge = length(dxy);',
+    'float ring = smoothstep(22.0, 62.0, dEdge);',
+    'float deep = smoothstep(70.0, 300.0, -pos.z);',
+    'float mask = max(ring, deep*0.38) * (1.0 - smoothstep(460.0, 720.0, dEdge));'
+  ].join('\n');
+
+  /* dark theme: resting dots and words are a muted grey; lit regions go
+     chapter green (#66bb6a) for the primary cluster, amber (#ffb74d) for
+     a secondary one */
+  var COL_CHUNK=[
+    'int ci = int(aCluster + 0.5);',
+    'float b = uBright[ci];',
+    'float warm = uWarm[ci];',
+    'vec3 grey = vec3(0.66, 0.68, 0.74);',
+    'vec3 lit = mix(vec3(0.40,0.73,0.42), vec3(1.00,0.72,0.30), warm);',
+    'vCol = mix(grey, lit, clamp(b,0.0,1.0));',
+    'float near = clamp(0.5 + (uDist - (-mv.z)) / (2.0*max(uRadii.z,1.0)), 0.15, 1.0);'
+  ].join('\n');
+
+  /* ---------- 5800 dots: the extra budget feeds the spherical core ---------- */
+  var NDOTS=5800;
+  var dotsPerCluster=90;
+  var dPos=new Float32Array(NDOTS*3);
+  var dRad=new Float32Array(NDOTS);
+  var dSize=new Float32Array(NDOTS);
+  var dClu=new Float32Array(NDOTS);
+  var dSeed=new Float32Array(NDOTS);
+  var dAl=new Float32Array(NDOTS);
+  var di=0;
+  function pushDot(dir,rad,clu){
+    dPos[di*3]=dir.x; dPos[di*3+1]=dir.y; dPos[di*3+2]=dir.z;
+    dRad[di]=rad;
+    /* core dots shrink and fade individually; with no mask over the
+       diagram, density alone must carry the centre without swamping copy */
+    dSize[di]=(1.3+Math.random()*2.0)*(0.6+0.4*Math.min(1,rad));
+    dClu[di]=clu+1;           /* 0 means no cluster */
+    dSeed[di]=Math.random();
+    dAl[di]=(0.22+Math.random()*0.30)*(0.30+0.70*Math.min(1,rad/0.9));
+    di++;
+  }
+  for(k=0;k<NCL;k++)
+    for(var n=0;n<dotsPerCluster;n++)
+      pushDot(nearDir(clusterDirs[k],0.16), 0.9+Math.random()*0.2, k);
+  /* spherical core: a steeper power-law radius peaks density at the centre
+     and falls off radially in all axes; the shader pushes small radii deep
+     in z with per-dot jitter so the core reads as a volume, not a cone */
+  while(di<NDOTS) pushDot(randDir(), 0.05+1.12*Math.pow(Math.random(),1.6), -1);
+
+  var dotsGeo=new THREE.BufferGeometry();
+  dotsGeo.setAttribute('position',new THREE.BufferAttribute(dPos,3));
+  dotsGeo.setAttribute('aRad',new THREE.BufferAttribute(dRad,1));
+  dotsGeo.setAttribute('aSize',new THREE.BufferAttribute(dSize,1));
+  dotsGeo.setAttribute('aCluster',new THREE.BufferAttribute(dClu,1));
+  dotsGeo.setAttribute('aSeed',new THREE.BufferAttribute(dSeed,1));
+  dotsGeo.setAttribute('aAlpha',new THREE.BufferAttribute(dAl,1));
+
+  var dotsMat=new THREE.ShaderMaterial({
+    uniforms:uniforms,
+    transparent:true, depthTest:false, depthWrite:false,
+    vertexShader:[
+      'uniform vec3 uRadii;','uniform float uTime;','uniform float uDist;','uniform float uDpr;',
+      'uniform vec2 uRes;','uniform vec4 uRect;',
+      'uniform float uBright['+(NCL+1)+'];','uniform float uWarm['+(NCL+1)+'];',
+      'attribute float aRad;','attribute float aSize;','attribute float aCluster;',
+      'attribute float aSeed;','attribute float aAlpha;',
+      'varying vec3 vCol;','varying float vA;',
+      'void main(){',
+      '  vec3 wd = normalize(mat3(modelMatrix) * position);',
+      '  float rad = aRad * (1.0 + 0.03*sin(uTime*1.4 + aSeed*6.2832));',
+      '  vec3 pos = wd * uRadii * rad + modelMatrix[3].xyz;',
+      '  pos.z -= 540.0 * clamp(1.0 - aRad, 0.0, 1.0) + 150.0*(aSeed - 0.5);',
+      '  vec4 mv = viewMatrix * vec4(pos, 1.0);',
+      '  gl_Position = projectionMatrix * mv;',
+      MASK_DOTS,
+      COL_CHUNK,
+      '  gl_PointSize = aSize * (1.0 + 0.9*b) * (uDist / max(1.0,-mv.z)) * uDpr;',
+      '  vA = mask * clamp(aAlpha*1.25*(0.35+0.65*near) + 0.6*b, 0.0, 0.95);',
+      '}'
+    ].join('\n'),
+    fragmentShader:[
+      'varying vec3 vCol;','varying float vA;',
+      'void main(){',
+      '  vec2 c = gl_PointCoord - 0.5;',
+      '  float a = smoothstep(0.5, 0.25, length(c)) * vA;',
+      '  if(a < 0.004) discard;',
+      '  gl_FragColor = vec4(vCol, a);',
+      '}'
+    ].join('\n')
+  });
+  var dots=new THREE.Points(dotsGeo,dotsMat);
+  dots.frustumCulled=false;
+  group.add(dots);
+
+  /* ---------- word quad atlas (~204 words) ---------- */
+  var atlasWords=[];
+  var clusterQuadRefs=[];   /* per cluster: word quad dirs for the line endpoints */
+  for(k=0;k<NCL;k++){
+    clusterQuadRefs.push([]);
+    CLUSTERS[k].words.forEach(function(w){
+      atlasWords.push({word:w, clu:k});
+    });
+  }
+  var nGeneric=204-atlasWords.length;
+  for(n=0;n<nGeneric;n++) atlasWords.push({word:GENERIC[n%GENERIC.length], clu:-1});
+
+  /* the atlas only supplies alpha; the shader colours the glyphs */
+  var AC=document.createElement('canvas');
+  AC.width=2048; AC.height=1024;
+  var actx=AC.getContext('2d');
+  actx.clearRect(0,0,2048,1024);
+  actx.fillStyle='#fff';
+  actx.textAlign='center';
+  actx.textBaseline='middle';
+  var COLS=12, CW=170, CH=60;
+  atlasWords.forEach(function(aw,idx){
+    var col=idx%COLS, row=(idx/COLS)|0;
+    var fs=26;
+    actx.font=fs+'px ui-monospace,"SF Mono",Menlo,monospace';
+    var tw=actx.measureText(aw.word).width;
+    if(tw>CW-14){ fs=Math.floor(fs*(CW-14)/tw); actx.font=fs+'px ui-monospace,"SF Mono",Menlo,monospace'; tw=actx.measureText(aw.word).width; }
+    var cx=col*CW+CW/2, cy=row*CH+CH/2;
+    actx.fillText(aw.word,cx,cy);
+    aw.u0=(cx-CW/2+4)/2048; aw.u1=(cx+CW/2-4)/2048;
+    aw.v0=1-(cy+CH/2-8)/1024; aw.v1=1-(cy-CH/2+8)/1024;
+    aw.aspect=(CW-8)/(CH-16);
+  });
+  var atlasTex=new THREE.CanvasTexture(AC);
+  atlasTex.minFilter=THREE.LinearMipmapLinearFilter;
+  atlasTex.magFilter=THREE.LinearFilter;
+
+  var NQ=atlasWords.length;
+  var qPos=new Float32Array(NQ*4*3);
+  var qRad=new Float32Array(NQ*4);
+  var qCorner=new Float32Array(NQ*4*2);
+  var qUv=new Float32Array(NQ*4*2);
+  var qSize=new Float32Array(NQ*4*2);
+  var qClu=new Float32Array(NQ*4);
+  var qAl=new Float32Array(NQ*4);
+  var qIdx=new Uint16Array(NQ*6);
+
+  atlasWords.forEach(function(aw,qi){
+    var dir = aw.clu>=0 ? nearDir(clusterDirs[aw.clu],0.12) : randDir();
+    /* generic words follow the same centre-dense core law as the dots */
+    var rad = aw.clu>=0 ? 0.96+Math.random()*0.12 : 0.12+Math.pow(Math.random(),1.4);
+    if(aw.clu>=0 && clusterQuadRefs[aw.clu].length<6)
+      clusterQuadRefs[aw.clu].push({dir:dir, rad:rad});
+    var h = aw.clu>=0 ? 12.5+Math.random()*4 : 10.5+Math.random()*4.5;
+    var wpx = h*aw.aspect*0.62;
+    var al = aw.clu>=0 ? 0.5+Math.random()*0.2
+                       : (0.3+Math.random()*0.3)*(0.4+0.6*Math.min(1,rad));
+    var corners=[[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]];
+    var uvs=[[aw.u0,aw.v0],[aw.u1,aw.v0],[aw.u1,aw.v1],[aw.u0,aw.v1]];
+    for(var v=0;v<4;v++){
+      var b=qi*4+v;
+      qPos[b*3]=dir.x; qPos[b*3+1]=dir.y; qPos[b*3+2]=dir.z;
+      qRad[b]=rad;
+      qCorner[b*2]=corners[v][0]; qCorner[b*2+1]=corners[v][1];
+      qUv[b*2]=uvs[v][0]; qUv[b*2+1]=uvs[v][1];
+      qSize[b*2]=wpx; qSize[b*2+1]=h;
+      qClu[b]=aw.clu+1;
+      qAl[b]=al;
+    }
+    var o=qi*6, f=qi*4;
+    qIdx[o]=f; qIdx[o+1]=f+1; qIdx[o+2]=f+2;
+    qIdx[o+3]=f; qIdx[o+4]=f+2; qIdx[o+5]=f+3;
+  });
+
+  /* a few random-looking pairs per cluster: the lit words interrelate */
+  var PAIRS=[];
+  for(k=0;k<NCL;k++){
+    var nr=clusterQuadRefs[k].length, prs=[], tries=0;
+    while(prs.length<4 && tries<24 && nr>1){
+      tries++;
+      var pa=(Math.random()*nr)|0, pb=(Math.random()*nr)|0;
+      if(pa!==pb) prs.push([pa,pb]);
+    }
+    PAIRS.push(prs);
+  }
+
+  var quadGeo=new THREE.BufferGeometry();
+  quadGeo.setAttribute('position',new THREE.BufferAttribute(qPos,3));
+  quadGeo.setAttribute('aRad',new THREE.BufferAttribute(qRad,1));
+  quadGeo.setAttribute('aCorner',new THREE.BufferAttribute(qCorner,2));
+  quadGeo.setAttribute('uv',new THREE.BufferAttribute(qUv,2));
+  quadGeo.setAttribute('aSizePx',new THREE.BufferAttribute(qSize,2));
+  quadGeo.setAttribute('aCluster',new THREE.BufferAttribute(qClu,1));
+  quadGeo.setAttribute('aAlpha',new THREE.BufferAttribute(qAl,1));
+  quadGeo.setIndex(new THREE.BufferAttribute(qIdx,1));
+
+  var quadUniforms=Object.assign({uAtlas:{value:atlasTex}},uniforms);
+  var quadMat=new THREE.ShaderMaterial({
+    uniforms:quadUniforms,
+    transparent:true, depthTest:false, depthWrite:false,
+    vertexShader:[
+      'uniform vec3 uRadii;','uniform float uTime;','uniform float uDist;','uniform float uDpr;',
+      'uniform vec2 uRes;','uniform vec4 uRect;',
+      'uniform float uBright['+(NCL+1)+'];','uniform float uWarm['+(NCL+1)+'];',
+      'attribute float aRad;','attribute vec2 aCorner;','attribute vec2 aSizePx;',
+      'attribute float aCluster;','attribute float aAlpha;',
+      'varying vec3 vCol;','varying float vA;','varying vec2 vUv;',
+      'void main(){',
+      '  vec3 wd = normalize(mat3(modelMatrix) * position);',
+      '  vec3 pos = wd * uRadii * aRad + modelMatrix[3].xyz;',
+      '  pos.z -= 540.0 * clamp(1.0 - aRad, 0.0, 1.0);',
+      '  vec4 mv = viewMatrix * vec4(pos, 1.0);',
+      '  int pci = int(aCluster + 0.5);',
+      '  float pb = uBright[pci];',
+      '  mv.xy += aCorner * aSizePx * (1.0 + 0.35*pb);',
+      '  gl_Position = projectionMatrix * mv;',
+      MASK_QUADS,
+      COL_CHUNK,
+      '  vUv = uv;',
+      '  vA = mask * clamp(aAlpha*1.3*(0.4+0.6*near) + 0.55*b, 0.0, 0.95);',
+      '}'
+    ].join('\n'),
+    fragmentShader:[
+      'uniform sampler2D uAtlas;',
+      'varying vec3 vCol;','varying float vA;','varying vec2 vUv;',
+      'void main(){',
+      '  vec4 t = texture2D(uAtlas, vUv);',
+      '  float a = t.a * vA;',
+      '  if(a < 0.005) discard;',
+      '  gl_FragColor = vec4(vCol, a);',
+      '}'
+    ].join('\n')
+  });
+  var quads=new THREE.Mesh(quadGeo,quadMat);
+  quads.frustumCulled=false;
+  group.add(quads);
+
+  /* ---------- faint line work: origin links + cluster subgraph ---------- */
+  var MAXSEG=72;
+  var lPos=new Float32Array(MAXSEG*2*3);
+  var lCol=new Float32Array(MAXSEG*2*3);
+  var lineGeo=new THREE.BufferGeometry();
+  lineGeo.setAttribute('position',new THREE.BufferAttribute(lPos,3).setUsage(THREE.DynamicDrawUsage));
+  lineGeo.setAttribute('color',new THREE.BufferAttribute(lCol,3).setUsage(THREE.DynamicDrawUsage));
+  lineGeo.setDrawRange(0,0);
+  var lineMat=new THREE.LineBasicMaterial({vertexColors:true, transparent:true, opacity:0.9});
+  var lines=new THREE.LineSegments(lineGeo,lineMat);
+  lines.frustumCulled=false;
+  scene.add(lines);
+
+  /* ---------- orientation: tumble + swing ---------- */
+  var alignCur=new THREE.Quaternion();
+  var alignTarget=new THREE.Quaternion();
+  var qSpin=new THREE.Quaternion();
+  var qWx=new THREE.Quaternion();
+  var qWz=new THREE.Quaternion();
+  var qTmp=new THREE.Quaternion();
+  var AXX=new THREE.Vector3(1,0,0), AXZ=new THREE.Vector3(0,0,1);
+  var spinAngle=0, elapsed=0;
+  var lastAlignedCluster=5;
+  var camKick={x:0,y:0};
+  alignTarget.setFromUnitVectors(clusterDirs[5],OVERHEAD);
+  alignCur.copy(alignTarget);
+
+  function setAlignCluster(ci){
+    if(ci<0) return;
+    lastAlignedCluster=ci;
+    alignTarget.setFromUnitVectors(clusterDirs[ci],OVERHEAD);
+  }
+
+  function composeOrientation(){
+    /* spin about the overhead axis keeps the aligned cluster pinned above
+       the sentence while everything else flows; wobble adds the tumble */
+    qSpin.setFromAxisAngle(OVERHEAD,spinAngle);
+    qWx.setFromAxisAngle(AXX,0.11*Math.sin(elapsed*0.45));
+    qWz.setFromAxisAngle(AXZ,0.08*Math.sin(elapsed*0.33+1.7));
+    group.quaternion.copy(qWx).multiply(qWz).multiply(qSpin).multiply(qTmp.copy(alignCur));
+    group.updateMatrixWorld(true);
+  }
+
+  var rayV=new THREE.Vector3(), rayD=new THREE.Vector3();
+  function screenToWorldZ0(sx,sy){
+    rayV.set(sx/PR.w*2-1, -(sy/PR.h)*2+1, 0.5);
+    rayV.unproject(camera);
+    rayD.copy(rayV).sub(camera.position).normalize();
+    if(Math.abs(rayD.z)<1e-6) return null;
+    var tt=-camera.position.z/rayD.z;
+    return rayV.copy(camera.position).addScaledVector(rayD,tt).clone();
+  }
+
+  var wv=new THREE.Vector3();
+  function clusterWordWorld(ref,out){
+    wv.copy(ref.dir).applyQuaternion(group.quaternion);
+    out.set(wv.x*uniforms.uRadii.value.x*ref.rad,
+            wv.y*uniforms.uRadii.value.y*ref.rad,
+            wv.z*uniforms.uRadii.value.z*ref.rad);
+    out.add(group.position);
+  }
+
+  /* line colours mix up from the panel background, so faint lines read as faint on dark */
+  var BG=[0.039,0.039,0.059], GRN=[0.40,0.73,0.42], INKC=[0.70,0.72,0.78];
+  var endV=new THREE.Vector3(), endU=new THREE.Vector3(), projV=new THREE.Vector3();
+
+  function putSeg(seg,ax,ay,az,bx,by,bz,cr,cg,cb){
+    var o=seg*6;
+    lPos[o]=ax; lPos[o+1]=ay; lPos[o+2]=az;
+    lPos[o+3]=bx; lPos[o+4]=by; lPos[o+5]=bz;
+    lCol[o]=cr; lCol[o+1]=cg; lCol[o+2]=cb;
+    lCol[o+3]=cr; lCol[o+4]=cg; lCol[o+5]=cb;
+  }
+
+  function updateLines(disp){
+    var seg=0;
+    if(disp && disp.env>0.02){
+      var tms=disp.tms||0;
+      var pd=pgate(tms,PH_GG);   /* galaxy words interconnect */
+      var pe=pgate(tms,PH_GO);   /* lit words back to the origin word */
+      var A=anchor(disp.i);
+      var start=A?screenToWorldZ0(A.cx,A.bottom+2):null;
+
+      /* phase e: lit galaxy words relate back to the word being processed */
+      if(start && pe>0.01){
+        for(var k2=0;k2<NCL && seg<MAXSEG;k2++){
+          var e=CL[k2].e;
+          if(e<0.05) continue;
+          var mixv=Math.min(1,(0.34*e*disp.env+0.03)*pe);
+          var cr=BG[0]+(GRN[0]-BG[0])*mixv;
+          var cg=BG[1]+(GRN[1]-BG[1])*mixv;
+          var cb=BG[2]+(GRN[2]-BG[2])*mixv;
+          var refs=clusterQuadRefs[k2];
+          for(var m=0;m<refs.length && seg<MAXSEG;m++){
+            clusterWordWorld(refs[m],endV);
+            putSeg(seg,start.x,start.y,start.z,endV.x,endV.y,endV.z,cr,cg,cb);
+            seg++;
+          }
+        }
+      }
+
+      /* phase d: a small semantic subgraph inside each lit cluster, faint */
+      if(pd>0.01){
+        for(var k3=0;k3<NCL && seg<MAXSEG;k3++){
+          var e3=CL[k3].e;
+          if(e3<0.22) continue;
+          var refs3=clusterQuadRefs[k3];
+          if(refs3.length<2) continue;
+          var mix3=Math.min(1,0.22*e3*disp.env*pd);
+          var ir=BG[0]+(INKC[0]-BG[0])*mix3;
+          var ig=BG[1]+(INKC[1]-BG[1])*mix3;
+          var ib=BG[2]+(INKC[2]-BG[2])*mix3;
+          var prs=PAIRS[k3];
+          for(var p=0;p<prs.length && seg<MAXSEG;p++){
+            clusterWordWorld(refs3[prs[p][0]],endV);
+            clusterWordWorld(refs3[prs[p][1]],endU);
+            putSeg(seg,endV.x,endV.y,endV.z,endU.x,endU.y,endU.z,ir,ig,ib);
+            seg++;
+          }
+        }
+      }
+    }
+    lineGeo.setDrawRange(0,seg*2);
+    if(seg>0){
+      lineGeo.attributes.position.needsUpdate=true;
+      lineGeo.attributes.color.needsUpdate=true;
+    }
+  }
+
+  function syncUniforms(){
+    for(var k2=0;k2<NCL;k2++){
+      uniforms.uBright.value[k2+1]=CL[k2].e;
+      uniforms.uWarm.value[k2+1]=CL[k2].warm;
+    }
+  }
+
+  function measure(){
+    var rect=diagramRect();
+    uniforms.uRect.value.set(rect.cx,rect.cy,rect.hw,rect.hh);
+    /* core galaxy: the ellipsoid spans just past the diagram; the volume
+       inside fills centre-dense, so the edges thin out naturally */
+    uniforms.uRadii.value.set(rect.hw+108,rect.hh+108,Math.min(rect.hw,rect.hh)*0.9+120);
+    return rect;
+  }
+
+  function resize(){
+    var w=PR.w,h=PR.h;
+    renderer.setSize(w,h,false);
+    camera.aspect=w/h;
+    camDist=(h*0.5)/Math.tan(FOV*Math.PI/360);
+    uniforms.uDist.value=camDist;
+    uniforms.uRes.value.set(w,h);
+    camera.updateProjectionMatrix();
+  }
+
+  function placeCamera(rect,swing){
+    /* shell centre tracks the diagram centre; the camera drifts on a slow
+       lissajous plus pointer parallax, and each step adds a lateral kick
+       so the swing reads with real depth */
+    camKick.x*=swing.decay; camKick.y*=swing.decay;
+    var ox=Math.sin(elapsed*0.13)*26 + mx*42 + camKick.x;
+    var oy=Math.cos(elapsed*0.10)*15 - my*26 + camKick.y;
+    var w=PR.w,h=PR.h;
+    group.position.set(rect.cx-w/2, h/2-rect.cy, 0);
+    group.updateMatrixWorld(true);
+    camera.position.set(ox,oy,camDist);
+    camera.lookAt(ox,oy,0);
+    camera.updateMatrixWorld(true);
+  }
+
+  return {
+    kick:function(){
+      camKick.x=(Math.random()*2-1)*95;
+      camKick.y=(Math.random()*2-1)*42;
+    },
+    /* panel-space positions of a cluster's reference words: endpoints for
+       the blue weight lines drawn on the overlay */
+    clusterScreenPoints:function(ci,max){
+      var out=[];
+      var refs=clusterQuadRefs[ci]||[];
+      for(var m=0;m<refs.length && out.length<max;m++){
+        clusterWordWorld(refs[m],endU);
+        projV.copy(endU).project(camera);
+        out.push({
+          x:(projV.x*0.5+0.5)*PR.w,
+          y:(0.5-projV.y*0.5)*PR.h
+        });
+      }
+      return out;
+    },
+    update:function(dt,disp){
+      var ds=dt/1000;
+      elapsed+=ds;
+      uniforms.uTime.value=elapsed;
+      spinAngle+=ds*0.24;
+      if(disp){
+        var sem=STEP_SEM[disp.i];
+        var prim=primaryOf(sem);
+        if(prim!==lastAlignedCluster) setAlignCluster(prim);
+      }
+      alignCur.slerp(alignTarget,1-Math.pow(0.004,ds));
+      composeOrientation();
+      var rect=measure();
+      placeCamera(rect,{decay:Math.pow(0.9965,dt)});
+      syncUniforms();
+      updateLines(disp);
+      renderer.render(scene,camera);
+    },
+    renderStatic:function(stepI){
+      var sem=STEP_SEM[stepI];
+      setAlignCluster(primaryOf(sem));
+      alignCur.copy(alignTarget);
+      spinAngle=0.6;
+      composeOrientation();
+      var rect=measure();
+      placeCamera(rect,{decay:0});
+      syncUniforms();
+      updateLines({i:stepI,prog:1,env:0.7,tms:1e6});
+      renderer.render(scene,camera);
+    },
+    renderIdle:function(){
+      composeOrientation();
+      var rect=measure();
+      placeCamera(rect,{decay:0});
+      syncUniforms();
+      updateLines(null);
+      renderer.render(scene,camera);
+    },
+    resize:resize
+  };
+}
+
+/* ===================================================================
+   STAGE MANAGEMENT (left panel drives the step engine)
+   =================================================================== */
+var currentStage = 0;
+
+STAGES.forEach(function(_, i){
+  var dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', function(){ goToStage(i); });
+  dot.style.cursor = 'pointer';
+  progressContainer.appendChild(dot);
+});
+
+function updateNarrative(stageIdx){
+  var s = STAGES[stageIdx];
+  narrativeContent.classList.add('fading');
+  setTimeout(function(){
+    narrativeContent.innerHTML =
+      '<div class="stage-inner">'+
+      '<div class="stage-label">'+s.label+'</div>'+
+      '<h2 class="stage-title">'+s.title+'</h2>'+
+      '<div class="stage-body">'+s.body+'</div>'+
+      '</div>';
+    narrativeContent.classList.remove('fading');
+  }, 300);
+}
+
+function updateProgress(stageIdx){
+  var dots = progressContainer.querySelectorAll('.dot');
+  dots.forEach(function(d, i){
+    d.classList.remove('active', 'visited');
+    if (i === stageIdx) d.classList.add('active');
+    else if (i < stageIdx) d.classList.add('visited');
+  });
+}
+
+function updateNavButtons(stageIdx){
+  btnPrev.disabled = stageIdx === 0;
+  if (stageIdx === STAGES.length - 1) {
+    btnNext.disabled = true;
+    btnNext.innerHTML = 'Coming Soon';
+  } else {
+    btnNext.disabled = false;
+    btnNext.innerHTML = 'Next <svg viewBox="0 0 24 24"><path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/></svg>';
+  }
+}
+
+function showStage(idx){
+  currentStage = idx;
+  updateNarrative(idx);
+  updateProgress(idx);
+  updateNavButtons(idx);
+}
+
+/* the first stage whose range holds step k; -1 belongs to the opening stage */
+function stageForStep(k){
+  if(k<0) return 0;
+  for(var i=0;i<STAGES.length;i++){
+    if(k>=STAGES[i].from && k<=STAGES[i].to) return i;
+  }
+  return 0;
+}
+
+/* the reader used the transport or free play: follow the step with the
+   narrative instead of fighting it, but only once it leaves the stage's range */
+function syncStage(){
+  if(stageDriving) return;
+  var S=STAGES[currentStage];
+  if(cur>=S.from && cur<=S.to) return;
+  showStage(stageForStep(cur));
+}
+
+function goToStage(idx){
+  if (idx < 0 || idx >= STAGES.length || idx === currentStage) return;
+  var forward = idx > currentStage;
+  var S = STAGES[idx];
+  showStage(idx);
+  stageDriving = true;
+  if (reduced) {
+    jumpState(S.to);
+    renderStaticFor(S.to);
+  } else if (!forward || S.hold || S.from < 0) {
+    /* previous, or a held final stage: land on the range end instantly */
+    if (cur !== S.to || phase !== 'idle') jumpState(S.to);
+  } else {
+    /* next: rebuild the state before the range, then play through it and stop */
+    jumpState(S.from - 1);
+    autoplay = true; paused = false; stopAt = S.to;
+    beginStep(S.from);
+    updateButtons();
+  }
+  stageDriving = false;
+}
+
+btnNext.addEventListener('click', function(){ goToStage(currentStage + 1); });
+btnPrev.addEventListener('click', function(){ goToStage(currentStage - 1); });
+
+document.addEventListener('keydown', function(e){
+  /* a focused transport button keeps space for its own activation */
+  if (e.key === ' ' && e.target && e.target.closest && e.target.closest('#transport')) return;
+  if (e.key === 'ArrowRight' || e.key === ' ') {
+    e.preventDefault();
+    goToStage(currentStage + 1);
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    goToStage(currentStage - 1);
+  }
+});
+
+/* ===================================================================
+   SIZING + MAIN LOOP
+   =================================================================== */
+function sizeOverlay(){
+  var dpr=Math.min(2,window.devicePixelRatio||1);
+  ocv.width=Math.round(PR.w*dpr);
+  ocv.height=Math.round(PR.h*dpr);
+  octx.setTransform(dpr,0,0,dpr,0,0);
+}
+
+function onResize(){
+  measurePanel();
+  sizeOverlay();
+  sizeWeights();
+  if(GLX) GLX.resize();
+  if(reduced) renderStaticFor(cur);
+}
+
+measurePanel();
+GLX=initGalaxy();
+window.addEventListener('resize',onResize);
+onResize();
+
+showStage(0);
+resetAll();
+
+if(reduced){
+  /* each stage is a static frame; the opening stage is the untouched diagram */
+  requestAnimationFrame(function(){ onResize(); renderStaticFor(-1); });
+} else {
+  var last=performance.now();
+  var frame=function(now){
+    var dt=Math.min(50,now-last); last=now;
+    measurePanel();
+    var disp=update(dt);
+    if(GLX) GLX.update(dt,disp);
+    drawWeights(disp);
+    drawOverlay(disp);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+})();
+</script>
+</body>
+</html>
